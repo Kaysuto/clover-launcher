@@ -10,7 +10,8 @@ msedge --headless=new --window-size=1100,680 --virtual-time-budget=8000 \
   --screenshot=home.png "http://localhost:1420/design/board.html?screen=home"
 ```
 
-Écrans : `login`, `login-error`, `home`, `installing`, `mods`, `skins`, `skin-editor`, `settings`, `crash`, `consent`.
+Écrans : `onboarding-first`, `onboarding-accounts`, `onboarding-error`, `onboarding-import`, `onboarding-done`,
+`signin`, `home`, `installing`, `mods`, `skins`, `skin-editor`, `settings`, `crash`.
 
 Les icônes des modes, les skins par défaut (`defaults/`), le skin et la cape de démonstration
 sont extraits du client installé ou téléchargés dans `design/placeholder/` (ignoré par git) : ils ne
@@ -48,3 +49,9 @@ images viendront du champ `image` des modes du manifeste.
   (ajout par clic ou glisser-déposer) et les skins par défaut du jeu, en vignettes 2D légères. La
   fenêtre « Modifier le skin » change la texture, les bras (classiques ou fins) et la cape parmi
   celles du compte. L'aperçu 3D ne tourne que de gauche à droite : ni inclinaison, ni zoom.
+- **Premier lancement** (`OnboardingScreen`), trois étapes : **Comptes** (plusieurs comptes
+  Microsoft d'affilée, un compte principal), **Importer** (installations trouvées dans les autres
+  launchers, une à la fois, avec le choix de ce qu'on reprend), **Terminé** (récapitulatif, réglages
+  recommandés pour la machine, accord pour les rapports de plantage, désactivé par défaut). Il n'y a
+  pas d'écran de connexion séparé : l'étape Comptes, sans le suivi d'étapes, sert aussi de
+  reconnexion quand plus aucun compte n'est enregistré (`signin`).

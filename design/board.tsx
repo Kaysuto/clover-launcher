@@ -13,15 +13,15 @@ import "@/styles.css";
 import { SideNav } from "@/components/SideNav";
 import { TitleBar } from "@/components/TitleBar";
 import { type RecentVote, VoteTicker } from "@/components/VoteTicker";
-import { CrashDialog, CrashReportConsentDialog } from "@/screens/Dialogs";
+import { CrashDialog } from "@/screens/Dialogs";
 import { HomeScreen } from "@/screens/HomeScreen";
-import { LoginScreen, type LoginState } from "@/screens/LoginScreen";
+import { DEFAULT_IMPORT, OnboardingAccounts, OnboardingDone, OnboardingImport } from "@/screens/OnboardingScreen";
 import { ModsScreen } from "@/screens/ModsScreen";
-import { type Settings, SettingsScreen } from "@/screens/SettingsScreen";
+import { type Account, type Settings, SettingsScreen } from "@/screens/SettingsScreen";
 import { SkinEditorDialog } from "@/screens/SkinEditorDialog";
 import { SkinsScreen } from "@/screens/SkinsScreen";
 import { cn } from "@/lib/utils";
-import type { Cape, ModInfo, ModeStatus, NewsItem, PlayState, Profile, SavedSkin, SkinLook, Tab } from "@/types";
+import type { Cape, DetectedInstance, ImportItem, ModInfo, ModeStatus, NewsItem, PlayState, Profile, SavedSkin, SkinLook, Tab } from "@/types";
 
 const icon = (name: string) => new URL(`./placeholder/${name}.png`, import.meta.url).href;
 const skin = new URL("./placeholder/skin.png", import.meta.url).href;
@@ -200,6 +200,116 @@ function Skins({ editing = false }: { editing?: boolean }) {
   );
 }
 
+const instances: DetectedInstance[] = [
+  {
+    id: "official",
+    launcher: "Launcher Minecraft officiel",
+    name: "Dernière version",
+    minecraft: "26.2",
+    loader: null,
+    path: "C:\\Users\\kaysu\\AppData\\Roaming\\.minecraft",
+    content: { options: true, servers: 12, resourcePacks: 2, shaderPacks: 0, screenshots: 58, worlds: 6 },
+    catalogueMods: [],
+    otherMods: 0,
+  },
+  {
+    id: "modrinth-fo",
+    launcher: "Modrinth App",
+    name: "Fabulously Optimized",
+    minecraft: "26.2",
+    loader: "Fabric",
+    path: "C:\\Users\\kaysu\\AppData\\Roaming\\ModrinthApp\\profiles\\Fabulously Optimized",
+    content: { options: true, servers: 3, resourcePacks: 1, shaderPacks: 4, screenshots: 12, worlds: 1 },
+    catalogueMods: ["Sodium", "FerriteCore", "ImmediatelyFast", "Entity Culling", "Dynamic FPS", "Continuity", "Zoomify"],
+    otherMods: 38,
+  },
+  {
+    id: "prism-pvp",
+    launcher: "Prism Launcher",
+    name: "PvP 1.21",
+    minecraft: "1.21.4",
+    loader: "Fabric",
+    path: "C:\\Users\\kaysu\\AppData\\Roaming\\PrismLauncher\\instances\\PvP 1.21",
+    content: { options: true, servers: 8, resourcePacks: 5, shaderPacks: 2, screenshots: 143, worlds: 3 },
+    catalogueMods: ["Sodium", "Iris Shaders", "Mod Menu", "AppleSkin"],
+    otherMods: 11,
+  },
+  {
+    id: "curseforge-sky",
+    launcher: "CurseForge",
+    name: "Skyblock",
+    minecraft: "1.20.1",
+    loader: "Forge",
+    path: "C:\\Users\\kaysu\\curseforge\\minecraft\\Instances\\Skyblock",
+    content: { options: true, servers: 2, resourcePacks: 0, shaderPacks: 0, screenshots: 4, worlds: 2 },
+    catalogueMods: [],
+    otherMods: 96,
+  },
+];
+
+const twoAccounts: Account[] = [
+  { profile, skin, active: true },
+  { profile: { uuid: "2", name: "Kaysuto_Alt" }, skin: new URL("./placeholder/defaults/alex-slim.png", import.meta.url).href, active: false },
+];
+
+function OnboardingAccountsBoard({ empty, error, standalone }: { empty?: boolean; error?: boolean; standalone?: boolean }) {
+  return (
+    <Window>
+      <OnboardingAccounts
+        standalone={standalone}
+        accounts={empty ? [] : twoAccounts}
+        login={error ? { kind: "error", message: "Ce compte Microsoft ne possède pas Minecraft: Java Edition." } : { kind: "idle" }}
+        onAdd={noop}
+        onMakeMain={noop}
+        onRemove={noop}
+        onContinue={noop}
+      />
+    </Window>
+  );
+}
+
+function OnboardingImportBoard() {
+  const [selectedId, setSelectedId] = useState<string | null>("prism-pvp");
+  const [choices, setChoices] = useState<Record<ImportItem, boolean>>(DEFAULT_IMPORT);
+  const [imported, setImported] = useState<string[]>(["official"]);
+  return (
+    <Window>
+      <OnboardingImport
+        instances={instances}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        choices={choices}
+        onChoice={(item, value) => setChoices((current) => ({ ...current, [item]: value }))}
+        importing={null}
+        imported={imported}
+        onImport={() => selectedId && setImported((current) => [...current, selectedId])}
+        onBack={noop}
+        onContinue={noop}
+      />
+    </Window>
+  );
+}
+
+function OnboardingDoneBoard() {
+  const [crashReports, setCrashReports] = useState(false);
+  return (
+    <Window>
+      <OnboardingDone
+        accounts={twoAccounts}
+        imports={[
+          "Launcher Minecraft officiel · Dernière version : réglages et touches, 12 serveurs, 2 packs de ressources.",
+          "Prism Launcher · PvP 1.21 : réglages et touches, 8 serveurs, 5 packs de ressources, 2 shaders, 4 mods activés.",
+        ]}
+        machine={{ summary: "16 Go de mémoire, NVIDIA GeForce RTX 3060", preset: "Élevés", memoryGb: 4 }}
+        crashReports={crashReports}
+        onCrashReports={setCrashReports}
+        onBack={noop}
+        onStart={noop}
+      />
+    </Window>
+  );
+}
+
 function SettingsBoard() {
   const [settings, setSettings] = useState<Settings>({
     memoryAuto: true,
@@ -232,14 +342,12 @@ function SettingsBoard() {
 }
 
 const SCREENS: Record<string, { label: string; render: () => ReactNode }> = {
-  login: { label: "Connexion", render: () => <Window><LoginScreen state={{ kind: "idle" }} onLogin={noop} onOpenLink={noop} /></Window> },
-  "login-error": {
-    label: "Connexion — erreur",
-    render: () => {
-      const state: LoginState = { kind: "error", message: "Ce compte Microsoft ne possède pas Minecraft: Java Edition." };
-      return <Window><LoginScreen state={state} onLogin={noop} onOpenLink={noop} /></Window>;
-    },
-  },
+  "onboarding-first": { label: "Premier lancement 1/3 — aucun compte", render: () => <OnboardingAccountsBoard empty /> },
+  "onboarding-accounts": { label: "Premier lancement 1/3 — comptes", render: () => <OnboardingAccountsBoard /> },
+  "onboarding-error": { label: "Premier lancement 1/3 — compte sans Minecraft", render: () => <OnboardingAccountsBoard error /> },
+  signin: { label: "Reconnexion (plus aucun compte)", render: () => <OnboardingAccountsBoard empty standalone /> },
+  "onboarding-import": { label: "Premier lancement 2/3 — importer", render: () => <OnboardingImportBoard /> },
+  "onboarding-done": { label: "Premier lancement 3/3 — terminé", render: () => <OnboardingDoneBoard /> },
   home: { label: "Accueil", render: () => <Home play={{ kind: "ready" }} /> },
   installing: {
     label: "Accueil — installation",
@@ -258,15 +366,6 @@ const SCREENS: Record<string, { label: string; render: () => ReactNode }> = {
       </>
     ),
   },
-  consent: {
-    label: "Premier lancement — rapports de plantage",
-    render: () => (
-      <>
-        <Home play={{ kind: "ready" }} />
-        <CrashReportConsentDialog open onAnswer={noop} />
-      </>
-    ),
-  },
 };
 
 function Board() {
@@ -282,7 +381,7 @@ function Board() {
               {screen.label}
             </a>
           </figcaption>
-          <div className="w-fit">{id === "crash" || id === "consent" || id === "skin-editor" ? <a href={`?screen=${id}`}>Ouvrir l'écran</a> : screen.render()}</div>
+          <div className="w-fit">{id === "crash" || id === "skin-editor" ? <a href={`?screen=${id}`}>Ouvrir l'écran</a> : screen.render()}</div>
         </figure>
       ))}
     </div>

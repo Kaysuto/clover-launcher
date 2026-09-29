@@ -14,7 +14,8 @@ Le launcher suit le serveur : la version, les mods et les modes sont décrits da
 
 | Écran / fonction | Détail |
 |---|---|
-| Connexion | Microsoft uniquement. Le compte doit posséder Minecraft Java, sinon message clair et lien d'achat. Plusieurs comptes, bascule en un clic. |
+| Premier lancement | Trois étapes. **Comptes** : plusieurs comptes Microsoft d'affilée (chacun doit posséder Minecraft Java), un compte principal. **Importer** : installations trouvées dans les autres launchers, une à la fois, avec le choix de ce qu'on reprend (voir 3.5 bis). **Terminé** : récapitulatif, réglages recommandés pour la machine, accord pour les rapports de plantage. |
+| Connexion | Microsoft uniquement, sans écran séparé : l'étape Comptes sert aussi de reconnexion quand plus aucun compte n'est enregistré. Bascule entre comptes en un clic. |
 | Accueil | Bouton « Jouer » (Quick Play sur `play.clovergames.fr`, arrivée au Lobby). Aperçu 3D du skin du compte actif (façon Laby Launcher). Cartes des 6 modes avec le nombre de joueurs connectés. Actualités du blog du site. Bandeau de maintenance. |
 | Mods | Catalogue organisé (performance, confort), chaque mod activable/désactivable. Un mod indisponible pour la version du serveur est grisé. |
 | Skins | Bibliothèque de skins (ajout d'un `.png`, skins par défaut du jeu), éditeur : texture, bras classiques ou fins, cape parmi celles du compte. Appliqué au compte Minecraft via l'API Mojang. Aperçu 3D en rotation horizontale seule. |
@@ -127,6 +128,16 @@ Tous disponibles pour Fabric 26.2 (Modrinth, vérifié le 2026-09-29) :
 - **Exclus** : minimaps (Xaero's), freelook et tout ce qui avantage en PvP. ModernFix n'existe pas encore pour 26.2.
 
 Chaque ajout est testé contre Vulcan en bêta : un mod qui provoque des faux positifs est retiré.
+
+### 3.5 bis Import depuis les autres launchers
+
+Détection au premier lancement (et depuis les paramètres) des installations du launcher officiel (`.minecraft`, `launcher_profiles.json`), de Modrinth App, de Prism Launcher / MultiMC et de CurseForge. Emplacements exacts à vérifier sur les trois systèmes.
+
+- **Copié, jamais déplacé** : les autres launchers ne sont pas modifiés.
+- **Repris au choix** : réglages et touches (`options.txt`), serveurs enregistrés (`servers.dat`), packs de ressources, shaders, captures d'écran, mondes solo. Mondes et captures décochés par défaut (volumineux).
+- **Mods** : jamais copiés. Leurs empreintes sont comparées au catalogue (API Modrinth `version_files`) ; les équivalents du catalogue sont proposés à l'activation, les autres sont listés comme non importés.
+- **Versions** : une instance plus ancienne est acceptée ; Minecraft convertit réglages et mondes à l'ouverture.
+- **Sécurité** : ne jamais lire les jetons ou comptes enregistrés par un autre launcher. Chaque compte passe par la connexion Microsoft du Clover Launcher.
 
 ### 3.6 Routes du site (`siteweb/src/app/api/launcher/`)
 

@@ -45,28 +45,3 @@ export function CrashDialog(props: {
     </Dialog>
   );
 }
-
-/** Demandé une fois, au premier lancement ; modifiable ensuite dans les paramètres. */
-export function CrashReportConsentDialog({ open, onAnswer }: { open: boolean; onAnswer: (accepted: boolean) => void }) {
-  return (
-    <Dialog open={open}>
-      <DialogContent className={content} showCloseButton={false} onEscapeKeyDown={(event) => event.preventDefault()} onInteractOutside={(event) => event.preventDefault()}>
-        <DialogHeader>
-          <DialogTitle className="font-display text-2xl font-normal">Aider à corriger les plantages&nbsp;?</DialogTitle>
-          <DialogDescription className="text-[13px] leading-relaxed">
-            Si le launcher plante, il peut envoyer un rapport à l'équipe Clover Games&nbsp;: version du launcher, système et message d'erreur. Jamais ton mot de passe ni tes jetons de
-            connexion. Tu pourras changer d'avis dans les paramètres.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter className={footer}>
-          <button type="button" onClick={() => onAnswer(false)} className={secondaryButton}>
-            Ne pas envoyer
-          </button>
-          <button type="button" onClick={() => onAnswer(true)} className={primaryButton}>
-            Envoyer les rapports
-          </button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}

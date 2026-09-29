@@ -46,3 +46,22 @@ export type Cape = { id: string; name: string; texture: string };
 export type SkinLook = { texture: string; model: SkinModel; cape: Cape | null };
 
 export type SavedSkin = { id: string; name: string; texture: string; model: SkinModel };
+
+/** Ce qu'on peut reprendre d'une instance d'un autre launcher. */
+export type ImportItem = "options" | "servers" | "resourcePacks" | "shaderPacks" | "screenshots" | "worlds" | "mods";
+
+/** Instance trouvée dans un autre launcher (officiel, Modrinth App, Prism, CurseForge…). */
+export type DetectedInstance = {
+  id: string;
+  launcher: string;
+  name: string;
+  minecraft: string;
+  /** `null` pour une instance sans mods (vanilla). */
+  loader: string | null;
+  path: string;
+  content: { options: boolean; servers: number; resourcePacks: number; shaderPacks: number; screenshots: number; worlds: number };
+  /** Mods de l'instance qui existent dans le catalogue Clover, reconnus par leur empreinte. */
+  catalogueMods: string[];
+  /** Mods hors catalogue : jamais importés. */
+  otherMods: number;
+};
