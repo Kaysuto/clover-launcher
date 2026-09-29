@@ -29,9 +29,6 @@ export function TitleBar({ session, activity, maximized, onMinimize, onToggleMax
   return (
     <header data-tauri-drag-region className="flex h-13 shrink-0 items-center gap-6 border-b border-border bg-[#100e0b] pl-[23px]">
       <img src={monogram} alt="Clover Games" width={30} height={30} data-tauri-drag-region />
-      <span data-tauri-drag-region className="-ml-3 font-display text-[17px] tracking-wide">
-        Clover Launcher
-      </span>
 
       <div data-tauri-drag-region className="h-full flex-1" />
 

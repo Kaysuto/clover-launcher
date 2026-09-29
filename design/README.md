@@ -42,7 +42,7 @@ images viendront du champ `image` des modes du manifeste.
   Contours, cases et boutons reprennent les utilitaires `mc-frame`, `mc-slot` et `mc-bevel` du site.
 - **Navigation** : colonne à gauche (`SideNav`), une case d'inventaire par section (Accueil, Mods,
   Skins) avec le cadre de sélection du jeu sur la section ouverte.
-- **Barre de titre** : monogramme et « Clover Launcher » à gauche ; derniers votes, compte,
+- **Barre de titre** : monogramme à gauche ; derniers votes, compte,
   paramètres (engrenage) et boutons de fenêtre (réduire, agrandir, fermer) en petits blocs en relief
   à droite.
 - **Skins** (inspiré de Modrinth App) : onglet dédié avec l'aperçu 3D à gauche, « Mes skins »
