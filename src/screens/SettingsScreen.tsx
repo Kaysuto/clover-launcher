@@ -15,6 +15,12 @@ export type Settings = {
   javaArgs: string;
   betaChannel: boolean;
   crashReports: boolean;
+  /** Statut Discord « Joue à Clover Games ». */
+  discordPresence: boolean;
+  /** Lancé à l'ouverture de la session, directement dans la zone de notification. */
+  startWithSystem: boolean;
+  /** Fermer la fenêtre la range dans la zone de notification au lieu de quitter. */
+  keepInTray: boolean;
 };
 
 export type Account = { profile: Profile; skin: string; active: boolean };
@@ -109,6 +115,30 @@ export function SettingsScreen(props: Props) {
             <button type="button" onClick={props.onChangeGameDir} className={secondaryButton}>
               Changer…
             </button>
+          </div>
+        </Row>
+
+        <Row title="Démarrage et fermeture" hint="Le launcher reste disponible pour les notifications et les mises à jour, sans fenêtre ouverte.">
+          <div className="flex items-center gap-3">
+            <Switch id="start-with-system" checked={settings.startWithSystem} onCheckedChange={(startWithSystem) => onChange({ startWithSystem })} />
+            <label htmlFor="start-with-system" className="text-sm">
+              Démarrer avec l'ordinateur <span className="text-muted-foreground">: réduit dans la zone de notification</span>
+            </label>
+          </div>
+          <div className="flex items-center gap-3">
+            <Switch id="keep-in-tray" checked={settings.keepInTray} onCheckedChange={(keepInTray) => onChange({ keepInTray })} />
+            <label htmlFor="keep-in-tray" className="text-sm">
+              Rester dans la zone de notification à la fermeture <span className="text-muted-foreground">: « Quitter » depuis l'icône</span>
+            </label>
+          </div>
+        </Row>
+
+        <Row title="Discord" hint="Tes amis Discord voient que tu joues à Clover Games, depuis quand, et peuvent rejoindre le serveur Discord.">
+          <div className="flex items-center gap-3">
+            <Switch id="discord-presence" checked={settings.discordPresence} onCheckedChange={(discordPresence) => onChange({ discordPresence })} />
+            <label htmlFor="discord-presence" className="text-sm">
+              Afficher mon activité sur Discord
+            </label>
           </div>
         </Row>
 

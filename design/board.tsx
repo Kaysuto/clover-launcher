@@ -10,18 +10,19 @@ import { StrictMode, type ReactNode, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import "@/styles.css";
+import { NotificationBell } from "@/components/NotificationBell";
 import { SideNav } from "@/components/SideNav";
 import { TitleBar } from "@/components/TitleBar";
 import { type RecentVote, VoteTicker } from "@/components/VoteTicker";
 import { CrashDialog } from "@/screens/Dialogs";
 import { HomeScreen } from "@/screens/HomeScreen";
 import { DEFAULT_IMPORT, OnboardingAccounts, OnboardingDone, OnboardingImport } from "@/screens/OnboardingScreen";
-import { ModsScreen } from "@/screens/ModsScreen";
+import { ModsScreen, type ModsView } from "@/screens/ModsScreen";
 import { type Account, type Settings, SettingsScreen } from "@/screens/SettingsScreen";
 import { SkinEditorDialog } from "@/screens/SkinEditorDialog";
 import { SkinsScreen } from "@/screens/SkinsScreen";
 import { cn } from "@/lib/utils";
-import type { Cape, DetectedInstance, ImportItem, ModInfo, ModeStatus, NewsItem, PlayState, Profile, SavedSkin, SkinLook, Tab } from "@/types";
+import type { Cape, DetectedInstance, ImportItem, LauncherNotification, ModInfo, PersonalMod, ModeStatus, NewsItem, PlayState, Profile, SavedSkin, SkinLook, Tab } from "@/types";
 
 const icon = (name: string) => new URL(`./placeholder/${name}.png`, import.meta.url).href;
 const skin = new URL("./placeholder/skin.png", import.meta.url).href;
@@ -39,6 +40,28 @@ const defaultSkins: SavedSkin[] = DEFAULT_NAMES.map((name, index) => ({
 const savedSkins: SavedSkin[] = [{ id: "mine", name: "Kaysuto", texture: skin, model: "slim" }];
 
 const noop = () => {};
+
+const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60000).toISOString();
+
+const notifications: LauncherNotification[] = [
+  { id: "n1", kind: "level", source: "game", title: "Niveau 24 atteint", message: "Tu as débloqué le titre « Vétéran » et 500 pièces.", url: null, createdAt: minutesAgo(8), read: false },
+  { id: "n2", kind: "purchase", source: "site", title: "Achat confirmé", message: "Grade Émeraude (30 jours) : il est actif sur tous les modes.", url: "https://clovergames.fr/shop", createdAt: minutesAgo(52), read: false },
+  { id: "n3", kind: "achievement", source: "game", title: "Succès débloqué", message: "BedWars : « Premier lit détruit ».", url: null, createdAt: minutesAgo(180), read: false },
+  { id: "n4", kind: "vote", source: "site", title: "Merci pour ton vote", message: "Récompense du palier 5 envoyée dans ta boîte aux lettres en jeu.", url: "https://clovergames.fr/vote", createdAt: minutesAgo(60 * 20), read: true },
+  { id: "n5", kind: "announcement", source: "site", title: "Nouvel article", message: "PvPSoup : le nouveau mode de combat libre.", url: "https://clovergames.fr/blog/pvpsoup-saison-1", createdAt: minutesAgo(60 * 50), read: true },
+];
+
+function Notifications({ open }: { open?: boolean }) {
+  const [items, setItems] = useState(notifications);
+  return (
+    <NotificationBell
+      items={items}
+      defaultOpen={open}
+      onOpen={(item) => setItems((all) => all.map((other) => (other.id === item.id ? { ...other, read: true } : other)))}
+      onReadAll={() => setItems((all) => all.map((other) => ({ ...other, read: true })))}
+    />
+  );
+}
 
 const votes: RecentVote[] = [
   { player: "TournePain6", votedAt: "2026-09-29T21:10:00Z" },
@@ -127,7 +150,7 @@ java.lang.IllegalStateException: GLFW error before init: [0x10008]WGL: Failed to
 /** Écran seul (`?screen=`) : la fenêtre remplit le navigateur, pour tester le redimensionnement. */
 const single = new URLSearchParams(location.search).has("screen");
 
-function Window({ children, tab }: { children: ReactNode; tab?: Tab }) {
+function Window({ children, tab, notificationsOpen }: { children: ReactNode; tab?: Tab; notificationsOpen?: boolean }) {
   const [maximized, setMaximized] = useState(false);
   return (
     <div
@@ -140,6 +163,7 @@ function Window({ children, tab }: { children: ReactNode; tab?: Tab }) {
       <TitleBar
         session={tab ? { profile, skin, tab, onTab: noop, onAccount: noop } : undefined}
         activity={<VoteTicker votes={votes} onVote={noop} />}
+        notifications={<Notifications open={notificationsOpen} />}
         maximized={maximized}
         onMinimize={noop}
         onToggleMaximize={() => setMaximized((value) => !value)}
@@ -157,9 +181,9 @@ function Window({ children, tab }: { children: ReactNode; tab?: Tab }) {
   );
 }
 
-function Home({ play }: { play: PlayState }) {
+function Home({ play, notificationsOpen }: { play: PlayState; notificationsOpen?: boolean }) {
   return (
-    <Window tab="home">
+    <Window tab="home" notificationsOpen={notificationsOpen}>
       <HomeScreen
         look={look}
         enabledMods={mods.filter((mod) => mod.enabled && mod.available).map((mod) => mod.name)}
@@ -169,11 +193,33 @@ function Home({ play }: { play: PlayState }) {
   );
 }
 
-function Mods() {
+const personalMods: PersonalMod[] = [
+  { id: "litematica", name: "Litematica", version: "0.24.1", filename: "litematica-fabric-26.2-0.24.1.jar", source: "Importé de Prism Launcher · PvP 1.21", enabled: true, status: { kind: "ok" } },
+  { id: "malilib", name: "MaLiLib", version: "0.25.2", filename: "malilib-fabric-26.2-0.25.2.jar", source: "Importé de Prism Launcher · PvP 1.21", enabled: true, status: { kind: "ok" } },
+  { id: "worldedit-cui", name: "WorldEdit CUI", version: "1.21.4+01", filename: "WorldEditCUI-1.21.4+01.jar", source: "Importé de Prism Launcher · PvP 1.21", enabled: false, status: { kind: "update", builtFor: "1.21.4", version: "26.2+01" } },
+  { id: "replaymod", name: "Replay Mod", version: "1.21.4-2.6.20", filename: "replaymod-1.21.4-2.6.20.jar", source: "Importé de Modrinth App · Fabulously Optimized", enabled: false, status: { kind: "outdated", builtFor: "1.21.4" } },
+  { id: "jei", name: "Just Enough Items", version: "15.20.0", filename: "jei-1.20.1-forge-15.20.0.jar", source: "Importé de CurseForge · Skyblock", enabled: false, status: { kind: "loader", loader: "Forge" } },
+  { id: "custom-hud", name: "Custom HUD", version: "3.4.2", filename: "customhud-3.4.2+26.2.jar", source: null, enabled: true, status: { kind: "ok" } },
+];
+
+function Mods({ view: initial = "catalogue" }: { view?: ModsView }) {
+  const [view, setView] = useState<ModsView>(initial);
   const [list, setList] = useState(mods);
+  const [personal, setPersonal] = useState(personalMods);
   return (
     <Window tab="mods">
-      <ModsScreen mods={list} minecraftVersion="26.2" onToggle={(id, enabled) => setList((all) => all.map((mod) => (mod.id === id ? { ...mod, enabled } : mod)))} />
+      <ModsScreen
+        view={view}
+        onView={setView}
+        mods={list}
+        personal={personal}
+        minecraftVersion="26.2"
+        onToggle={(id, enabled) => setList((all) => all.map((mod) => (mod.id === id ? { ...mod, enabled } : mod)))}
+        onTogglePersonal={(id, enabled) => setPersonal((all) => all.map((mod) => (mod.id === id ? { ...mod, enabled } : mod)))}
+        onUpdatePersonal={(id) => setPersonal((all) => all.map((mod) => (mod.id === id ? { ...mod, status: { kind: "ok" } } : mod)))}
+        onRemovePersonal={(id) => setPersonal((all) => all.filter((mod) => mod.id !== id))}
+        onAddFiles={noop}
+      />
     </Window>
   );
 }
@@ -318,6 +364,9 @@ function SettingsBoard() {
     javaArgs: "",
     betaChannel: false,
     crashReports: true,
+    discordPresence: true,
+    startWithSystem: false,
+    keepInTray: true,
   });
   return (
     <Window tab="settings">
@@ -349,11 +398,13 @@ const SCREENS: Record<string, { label: string; render: () => ReactNode }> = {
   "onboarding-import": { label: "Premier lancement 2/3 — importer", render: () => <OnboardingImportBoard /> },
   "onboarding-done": { label: "Premier lancement 3/3 — terminé", render: () => <OnboardingDoneBoard /> },
   home: { label: "Accueil", render: () => <Home play={{ kind: "ready" }} /> },
+  notifications: { label: "Accueil — notifications", render: () => <Home play={{ kind: "ready" }} notificationsOpen /> },
   installing: {
     label: "Accueil — installation",
     render: () => <Home play={{ kind: "installing", progress: { phase: "assets", done: 1612, total: 3902 } }} />,
   },
-  mods: { label: "Mods", render: () => <Mods /> },
+  mods: { label: "Mods — catalogue", render: () => <Mods /> },
+  "mods-personal": { label: "Mods — mes mods", render: () => <Mods view="personal" /> },
   settings: { label: "Paramètres", render: () => <SettingsBoard /> },
   skins: { label: "Skins", render: () => <Skins /> },
   "skin-editor": { label: "Skins — modifier", render: () => <Skins editing /> },
@@ -381,7 +432,7 @@ function Board() {
               {screen.label}
             </a>
           </figcaption>
-          <div className="w-fit">{id === "crash" || id === "skin-editor" ? <a href={`?screen=${id}`}>Ouvrir l'écran</a> : screen.render()}</div>
+          <div className="w-fit">{id === "crash" || id === "skin-editor" || id === "notifications" ? <a href={`?screen=${id}`}>Ouvrir l'écran</a> : screen.render()}</div>
         </figure>
       ))}
     </div>

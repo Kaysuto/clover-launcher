@@ -11,6 +11,8 @@ type Props = {
   session?: { profile: Profile; skin: string; tab: Tab; onTab: (tab: Tab) => void; onAccount: () => void };
   /** Affiché à gauche du compte (derniers votes). */
   activity?: ReactNode;
+  /** Cloche des notifications, à gauche des paramètres. */
+  notifications?: ReactNode;
   maximized: boolean;
   onMinimize: () => void;
   onToggleMaximize: () => void;
@@ -23,9 +25,9 @@ const windowButton =
 
 /**
  * Barre de titre de la fenêtre sans cadre : zone de déplacement (double-clic pour agrandir),
- * derniers votes, compte, paramètres, boutons de fenêtre.
+ * derniers votes, compte, notifications, paramètres, boutons de fenêtre.
  */
-export function TitleBar({ session, activity, maximized, onMinimize, onToggleMaximize, onClose }: Props) {
+export function TitleBar({ session, activity, notifications, maximized, onMinimize, onToggleMaximize, onClose }: Props) {
   return (
     <header data-tauri-drag-region className="flex h-13 shrink-0 items-center gap-6 border-b border-border bg-[#100e0b] pl-[23px]">
       <img src={monogram} alt="Clover Games" width={30} height={30} data-tauri-drag-region />
@@ -47,19 +49,22 @@ export function TitleBar({ session, activity, maximized, onMinimize, onToggleMax
       )}
 
       {session && (
-        <button
-          type="button"
-          aria-label="Paramètres"
-          title="Paramètres"
-          aria-current={session.tab === "settings" ? "page" : undefined}
-          onClick={() => session.onTab("settings")}
-          className={cn(
-            "-ml-4 grid size-9 place-items-center rounded-md transition-colors",
-            session.tab === "settings" ? "bg-secondary text-accent" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-          )}
-        >
-          <Settings className="size-[18px]" aria-hidden />
-        </button>
+        <div className="flex items-center gap-2">
+          {notifications}
+          <button
+            type="button"
+            aria-label="Paramètres"
+            title="Paramètres"
+            aria-current={session.tab === "settings" ? "page" : undefined}
+            onClick={() => session.onTab("settings")}
+            className={cn(
+              "grid size-9 place-items-center rounded-md transition-colors",
+              session.tab === "settings" ? "bg-secondary text-accent" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+            )}
+          >
+            <Settings className="size-[18px]" aria-hidden />
+          </button>
+        </div>
       )}
 
       <div className="flex gap-1.5 pr-3">

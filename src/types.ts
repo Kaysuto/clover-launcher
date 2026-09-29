@@ -48,7 +48,7 @@ export type SkinLook = { texture: string; model: SkinModel; cape: Cape | null };
 export type SavedSkin = { id: string; name: string; texture: string; model: SkinModel };
 
 /** Ce qu'on peut reprendre d'une instance d'un autre launcher. */
-export type ImportItem = "options" | "servers" | "resourcePacks" | "shaderPacks" | "screenshots" | "worlds" | "mods";
+export type ImportItem = "options" | "servers" | "resourcePacks" | "shaderPacks" | "screenshots" | "worlds" | "mods" | "personalMods";
 
 /** Instance trouvée dans un autre launcher (officiel, Modrinth App, Prism, CurseForge…). */
 export type DetectedInstance = {
@@ -62,6 +62,40 @@ export type DetectedInstance = {
   content: { options: boolean; servers: number; resourcePacks: number; shaderPacks: number; screenshots: number; worlds: number };
   /** Mods de l'instance qui existent dans le catalogue Clover, reconnus par leur empreinte. */
   catalogueMods: string[];
-  /** Mods hors catalogue : jamais importés. */
+  /** Mods hors catalogue : copiés dans « Mes mods » si le joueur le demande, désactivés au départ. */
   otherMods: number;
+};
+
+/**
+ * Mod ajouté par le joueur (fichier .jar ou import depuis un autre launcher), hors catalogue.
+ * L'état est lu dans `fabric.mod.json` et, pour les mises à jour, sur Modrinth par empreinte.
+ */
+export type PersonalMod = {
+  id: string;
+  name: string;
+  version: string | null;
+  filename: string;
+  /** « Importé de Prism Launcher · PvP 1.21 », ou `null` pour un fichier ajouté à la main. */
+  source: string | null;
+  enabled: boolean;
+  status:
+    | { kind: "ok" }
+    | { kind: "update"; builtFor: string; version: string }
+    | { kind: "outdated"; builtFor: string }
+    | { kind: "loader"; loader: string };
+};
+
+export type NotificationKind = "level" | "achievement" | "purchase" | "reward" | "vote" | "announcement";
+
+/** Notification du site (table `notifications`) ou évènement du jeu (niveau, récompense…). */
+export type LauncherNotification = {
+  id: string;
+  kind: NotificationKind;
+  source: "site" | "game";
+  title: string;
+  message: string;
+  /** Ouvert au clic (page du site), ou `null`. */
+  url: string | null;
+  createdAt: string;
+  read: boolean;
 };

@@ -11,7 +11,7 @@ msedge --headless=new --window-size=1100,680 --virtual-time-budget=8000 \
 ```
 
 Écrans : `onboarding-first`, `onboarding-accounts`, `onboarding-error`, `onboarding-import`, `onboarding-done`,
-`signin`, `home`, `installing`, `mods`, `skins`, `skin-editor`, `settings`, `crash`.
+`signin`, `home`, `notifications`, `installing`, `mods`, `mods-personal`, `skins`, `skin-editor`, `settings`, `crash`.
 
 Les icônes des modes, les skins par défaut (`defaults/`), le skin et la cape de démonstration
 sont extraits du client installé ou téléchargés dans `design/placeholder/` (ignoré par git) : ils ne
@@ -55,3 +55,12 @@ images viendront du champ `image` des modes du manifeste.
   recommandés pour la machine, accord pour les rapports de plantage, désactivé par défaut). Il n'y a
   pas d'écran de connexion séparé : l'étape Comptes, sans le suivi d'étapes, sert aussi de
   reconnexion quand plus aucun compte n'est enregistré (`signin`).
+- **Mes mods** : onglet à côté du catalogue Clover, pour les mods du joueur (fichier `.jar` ou import
+  d'un autre launcher). Non vérifiés, avec avertissement anticheat. Un mod fait pour une autre
+  version de Minecraft ou pour un autre loader (Forge…) est signalé et ne peut pas être activé ; si
+  Modrinth connaît une version pour la version du serveur, « Mettre à jour » la propose.
+- **Notifications** : cloche à gauche des paramètres, pastille du nombre de non lues. Réunit les
+  notifications du site (achats, votes, annonces) et les évènements du jeu (niveau, succès,
+  récompenses). Les boutons de la barre de titre sont espacés, jamais collés.
+- **Paramètres** : démarrer avec l'ordinateur, rester dans la zone de notification à la fermeture,
+  Discord, rapports de plantage.

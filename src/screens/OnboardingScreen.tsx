@@ -160,7 +160,7 @@ export function OnboardingAccounts({ standalone = false, accounts, login, onAdd,
 
 // ── Étape 2 : importer ─────────────────────────────────────────────────────────
 
-const ITEMS: { id: Exclude<ImportItem, "mods">; label: string; hint: string; count: (instance: DetectedInstance) => number }[] = [
+const ITEMS: { id: Exclude<ImportItem, "mods" | "personalMods">; label: string; hint: string; count: (instance: DetectedInstance) => number }[] = [
   { id: "options", label: "Réglages et touches", hint: "Commandes, son, affichage", count: (i) => (i.content.options ? 1 : 0) },
   { id: "servers", label: "Serveurs enregistrés", hint: "Ta liste du menu Multijoueur", count: (i) => i.content.servers },
   { id: "resourcePacks", label: "Packs de ressources", hint: "", count: (i) => i.content.resourcePacks },
@@ -176,6 +176,7 @@ export const DEFAULT_IMPORT: Record<ImportItem, boolean> = {
   resourcePacks: true,
   shaderPacks: true,
   mods: true,
+  personalMods: false,
   screenshots: false,
   worlds: false,
 };
@@ -280,7 +281,10 @@ function ImportDetails({ instance, choices, onChoice, importing, imported, onImp
   const busy = importing?.id === instance.id;
   const done = imported.includes(instance.id);
   const items = ITEMS.filter((item) => item.count(instance) > 0);
-  const nothing = items.every((item) => !choices[item.id]) && !(instance.catalogueMods.length > 0 && choices.mods);
+  const nothing =
+    items.every((item) => !choices[item.id]) &&
+    !(instance.catalogueMods.length > 0 && choices.mods) &&
+    !(instance.otherMods > 0 && choices.personalMods);
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -338,11 +342,18 @@ function ImportDetails({ instance, choices, onChoice, importing, imported, onImp
             </div>
           )}
           {instance.otherMods > 0 && (
-            <p className="flex items-start gap-2 text-xs leading-snug text-muted-foreground">
-              <Puzzle className="mt-px size-3.5 shrink-0" aria-hidden />
-              {instance.otherMods} autre{instance.otherMods > 1 ? "s" : ""} mod{instance.otherMods > 1 ? "s" : ""} ne {instance.otherMods > 1 ? "sont" : "est"} pas proposé
-              {instance.otherMods > 1 ? "s" : ""} par Clover Games et ne {instance.otherMods > 1 ? "seront" : "sera"} pas importé{instance.otherMods > 1 ? "s" : ""}.
-            </p>
+            <div className="flex items-start gap-3">
+              <Switch id="import-personal" checked={choices.personalMods} onCheckedChange={(value) => onChoice("personalMods", value)} disabled={busy} className="mt-0.5" />
+              <label htmlFor="import-personal" className="flex flex-col gap-0.5 text-sm">
+                <span className="font-semibold">
+                  Copier {instance.otherMods} autre{instance.otherMods > 1 ? "s" : ""} mod{instance.otherMods > 1 ? "s" : ""} dans « Mes mods »
+                </span>
+                <span className="flex items-center gap-1.5 text-xs leading-snug text-muted-foreground">
+                  <Puzzle className="size-3.5 shrink-0" aria-hidden />
+                  Non vérifiés par Clover Games, désactivés au départ. Ceux qui ne sont pas faits pour Fabric et pour cette version seront signalés.
+                </span>
+              </label>
+            </div>
           )}
         </div>
       )}

@@ -17,11 +17,13 @@ Le launcher suit le serveur : la version, les mods et les modes sont décrits da
 | Premier lancement | Trois étapes. **Comptes** : plusieurs comptes Microsoft d'affilée (chacun doit posséder Minecraft Java), un compte principal. **Importer** : installations trouvées dans les autres launchers, une à la fois, avec le choix de ce qu'on reprend (voir 3.5 bis). **Terminé** : récapitulatif, réglages recommandés pour la machine, accord pour les rapports de plantage. |
 | Connexion | Microsoft uniquement, sans écran séparé : l'étape Comptes sert aussi de reconnexion quand plus aucun compte n'est enregistré. Bascule entre comptes en un clic. |
 | Accueil | Bouton « Jouer » (Quick Play sur `play.clovergames.fr`, arrivée au Lobby). Aperçu 3D du skin du compte actif (façon Laby Launcher). Cartes des 6 modes avec le nombre de joueurs connectés. Actualités du blog du site. Bandeau de maintenance. |
-| Mods | Catalogue organisé (performance, confort), chaque mod activable/désactivable. Un mod indisponible pour la version du serveur est grisé. |
+| Mods | Deux onglets. **Catalogue Clover** : organisé (performance, visuel, confort), chaque mod activable, grisé s'il n'existe pas pour la version du serveur. **Mes mods** : mods ajoutés par le joueur (`.jar` ou import d'un autre launcher), non vérifiés, avec avertissement anticheat ; ceux faits pour une autre version ou un autre loader sont signalés et ne peuvent pas être activés, une mise à jour est proposée quand Modrinth en connaît une. |
 | Skins | Bibliothèque de skins (ajout d'un `.png`, skins par défaut du jeu), éditeur : texture, bras classiques ou fins, cape parmi celles du compte. Appliqué au compte Minecraft via l'API Mojang. Aperçu 3D en rotation horizontale seule. |
-| Paramètres | RAM (automatique ou manuelle), dossier du jeu, arguments Java avancés, canal bêta (staff). |
+| Paramètres | RAM (automatique ou manuelle), dossier du jeu, démarrer avec l'ordinateur (réduit dans la zone de notification), rester dans la zone de notification à la fermeture, Discord, rapports de plantage, arguments Java avancés, canal bêta (staff). |
+| Notifications | Cloche à gauche des paramètres, pastille du nombre de non lues. Réunit les notifications du site (achats, votes, annonces, succès) et les évènements du jeu (niveau gagné, succès, récompenses). Notification système quand la fenêtre est fermée. |
 | Installation | Java, Minecraft, Fabric et mods téléchargés, vérifiés (hash), reprise après coupure. |
 | Mises à jour | Launcher mis à jour automatiquement ; contenu du jeu resynchronisé à chaque lancement. |
+| Discord | Statut « Joue à Clover Games » via Discord Rich Presence : dans le launcher, puis en jeu avec la durée de la partie, logo Clover et boutons « Rejoindre le Discord » et « Site ». Désactivable dans les paramètres. Le mode en cours (BedWars, Practice…) arrive en V2 avec le mod Clover. |
 | Plantages | Accord demandé au premier lancement. Plantage du launcher envoyé à Sentry si accepté. Plantage du jeu : écran dédié avec copie du log. |
 | Langue | Français uniquement. |
 
@@ -31,11 +33,11 @@ Le launcher suit le serveur : la version, les mods et les modes sont décrits da
 - **Canal serveur ↔ mod Clover**, sur le modèle de la LabyMod Server API : Discord Rich Presence piloté par le serveur (mode et partie en cours), fonctions autorisées par mode (par exemple une minimap permise en Créatif et bloquée en PvP, ce qui rouvrirait des mods exclus en V1), bannière de tablist.
 - Côté plugin, indépendamment du launcher : prendre en charge la LabyMod Server API pour les joueurs déjà sous LabyMod (Discord RPC, mode de jeu en cours).
 - Compte du site dans le launcher : boutique, succès, notifications.
-- Discord Rich Presence, amis connectés et leur mode sur l'accueil (module `friends` du plugin).
+- Discord Rich Presence détaillée : mode et partie en cours, fournis par le serveur au mod Clover. Amis connectés et leur mode sur l'accueil (module `friends` du plugin).
 
 ### Hors périmètre
 
-Autres serveurs, parties solo mises en avant, installations multiples façon Modrinth, mods libres ajoutés par le joueur, comptes non premium.
+Autres serveurs, parties solo mises en avant, installations multiples façon Modrinth, comptes non premium.
 
 ## 3. Architecture
 
