@@ -1,5 +1,6 @@
 import { ArrowUpRight } from "lucide-react";
 
+import { Backdrop } from "@/components/Backdrop";
 import { ModeHotbar } from "@/components/ModeHotbar";
 import { NewsList } from "@/components/NewsList";
 import { PlayButton } from "@/components/PlayButton";
@@ -33,13 +34,7 @@ export function HomeScreen({ skin, enabledMods, onManageMods, play, onPlay, mine
   return (
     <main className="flex min-h-0 flex-1 flex-col">
       <section className="relative flex h-[clamp(300px,46vh,440px)] shrink-0 items-end overflow-hidden">
-        {featured?.image ? (
-          <img src={featured.image} alt="" aria-hidden className="absolute inset-0 size-full object-cover" />
-        ) : (
-          <div aria-hidden className="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_40%,rgb(82_169_108/0.22),transparent_60%),radial-gradient(ellipse_at_30%_80%,rgb(217_164_65/0.14),transparent_55%)]" />
-        )}
-        <div aria-hidden className="absolute inset-0 bg-gradient-to-r from-background via-background/75 to-background/20" />
-        <div aria-hidden className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-b from-transparent to-background" />
+        <Backdrop className="[mask-image:linear-gradient(to_bottom,black_65%,transparent)]" />
 
         <div className="relative flex w-full items-end justify-between gap-8 px-12 pb-8">
           {featured ? (

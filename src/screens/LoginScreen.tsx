@@ -1,6 +1,7 @@
 import { ArrowUpRight } from "lucide-react";
 
 import monogram from "@/assets/brand/monogram.webp";
+import { Backdrop } from "@/components/Backdrop";
 
 export type LoginState = { kind: "idle" } | { kind: "waiting" } | { kind: "error"; message: string };
 
@@ -18,10 +19,7 @@ function MicrosoftLogo() {
 export function LoginScreen({ state, onLogin, onOpenLink }: { state: LoginState; onLogin: () => void; onOpenLink: (url: string) => void }) {
   return (
     <main className="relative flex flex-1 flex-col items-center justify-center overflow-hidden pb-10">
-      <div
-        aria-hidden
-        className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_30%,rgb(82_169_108/0.16),transparent_55%),radial-gradient(ellipse_at_50%_70%,rgb(217_164_65/0.08),transparent_60%)]"
-      />
+      <Backdrop />
 
       <img src={monogram} alt="Clover Games" width={72} height={72} className="relative drop-shadow-[0_10px_20px_rgb(0_0_0/0.6)]" />
 

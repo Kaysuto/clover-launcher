@@ -24,8 +24,11 @@ images viendront du champ `image` des modes du manifeste.
 - **Typographies** : Lilita One pour les titres et « Jouer » (lettrage épais, proche du logo),
   Montserrat pour le texte (celle du site), Monocraft pour les chiffres du jeu (joueurs, versions,
   mémoire).
-- **Pas de gros logo** : l'accueil met en avant l'actualité à la une (image de l'article en fond,
-  titre, lien), le monogramme reste dans la barre de titre.
+- **Pas de gros logo** : l'accueil met en avant l'actualité à la une (titre, résumé, lien), le
+  monogramme reste dans la barre de titre.
+- **Pas de photo en fond** : ni capture du serveur ni image d'article derrière l'interface. Le fond
+  (`src/components/Backdrop.tsx`) se limite à deux lueurs vert trèfle et or et à des pixels épars
+  comme des particules. Les images d'articles ne servent qu'en vignette dans la liste des actualités.
 - **Signature** : le bouton « Jouer », dalle dorée en relief taillée comme les lettres du logo,
   dont la tranche s'écrase au clic et dont la face se remplit pendant l'installation.
 - **Idiome Minecraft** : les modes sont une barre d'inventaire. Le nombre de joueurs s'affiche comme

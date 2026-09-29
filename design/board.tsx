@@ -37,7 +37,7 @@ const news: NewsItem[] = [
   {
     title: "PvPSoup : le nouveau mode de combat libre",
     excerpt: "Soupes, kits et arène ouverte : tout ce qu'il faut savoir avant ta première partie.",
-    image: new URL("./placeholder/banner.png", import.meta.url).href,
+    image: null,
     url: "https://clovergames.fr/blog/pvpsoup-saison-1",
     publishedAt: "2026-09-20",
   },
