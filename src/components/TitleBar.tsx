@@ -9,6 +9,7 @@ import type { Profile, Tab } from "@/types";
 const TABS: { id: Tab; label: string }[] = [
   { id: "home", label: "Accueil" },
   { id: "mods", label: "Mods" },
+  { id: "skins", label: "Skins" },
 ];
 
 type Props = {

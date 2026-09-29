@@ -17,11 +17,26 @@ import { HomeScreen } from "@/screens/HomeScreen";
 import { LoginScreen, type LoginState } from "@/screens/LoginScreen";
 import { ModsScreen } from "@/screens/ModsScreen";
 import { type Settings, SettingsScreen } from "@/screens/SettingsScreen";
+import { SkinEditorDialog } from "@/screens/SkinEditorDialog";
+import { SkinsScreen } from "@/screens/SkinsScreen";
 import { cn } from "@/lib/utils";
-import type { ModInfo, ModeStatus, NewsItem, PlayState, Profile, Tab } from "@/types";
+import type { Cape, ModInfo, ModeStatus, NewsItem, PlayState, Profile, SavedSkin, SkinLook, Tab } from "@/types";
 
 const icon = (name: string) => new URL(`./placeholder/${name}.png`, import.meta.url).href;
 const skin = new URL("./placeholder/skin.png", import.meta.url).href;
+/** Seule cape du compte de démonstration : la liste de l'éditeur vient de `minecraft/profile`. */
+const capes: Cape[] = [{ id: "own", name: "Cape du compte", texture: new URL("./placeholder/cape.png", import.meta.url).href }];
+const look: SkinLook = { texture: skin, model: "slim", cape: capes[0] };
+
+const DEFAULT_NAMES = ["steve", "alex", "ari", "efe", "kai", "makena", "noor", "sunny", "zuri"];
+const defaultSkins: SavedSkin[] = DEFAULT_NAMES.map((name, index) => ({
+  id: `default-${name}`,
+  name: name[0].toUpperCase() + name.slice(1),
+  texture: new URL(`./placeholder/defaults/${name}-${index % 2 === 0 ? "wide" : "slim"}.png`, import.meta.url).href,
+  model: index % 2 === 0 ? "classic" : "slim",
+}));
+const savedSkins: SavedSkin[] = [{ id: "mine", name: "Kaysuto", texture: skin, model: "slim" }];
+
 const noop = () => {};
 
 const votes: RecentVote[] = [
@@ -138,7 +153,7 @@ function Home({ play }: { play: PlayState }) {
   return (
     <Window tab="home">
       <HomeScreen
-        skin={skin}
+        look={look}
         enabledMods={mods.filter((mod) => mod.enabled && mod.available).map((mod) => mod.name)}
         onManageMods={noop}
         play={play} onPlay={noop} minecraftVersion="26.2" modes={modes} destination="lobby" news={news} onOpenLink={noop} />
@@ -151,6 +166,28 @@ function Mods() {
   return (
     <Window tab="mods">
       <ModsScreen mods={list} minecraftVersion="26.2" onToggle={(id, enabled) => setList((all) => all.map((mod) => (mod.id === id ? { ...mod, enabled } : mod)))} />
+    </Window>
+  );
+}
+
+function Skins({ editing = false }: { editing?: boolean }) {
+  const [activeId, setActiveId] = useState<string | null>("mine");
+  const [draft, setDraft] = useState<SkinLook>(look);
+  const [open, setOpen] = useState(editing);
+  const current = [...savedSkins, ...defaultSkins].find((item) => item.id === activeId);
+  return (
+    <Window tab="skins">
+      <SkinsScreen
+        playerName={profile.name}
+        look={current ? { texture: current.texture, model: current.model, cape: look.cape } : look}
+        saved={savedSkins}
+        defaults={defaultSkins}
+        activeId={activeId}
+        onSelect={(item) => setActiveId(item.id)}
+        onAddFile={noop}
+        onEdit={() => setOpen(true)}
+      />
+      <SkinEditorDialog open={open} draft={draft} capes={capes} saving={false} onChange={setDraft} onReplaceTexture={noop} onSave={() => setOpen(false)} onOpenChange={setOpen} />
     </Window>
   );
 }
@@ -202,6 +239,8 @@ const SCREENS: Record<string, { label: string; render: () => ReactNode }> = {
   },
   mods: { label: "Mods", render: () => <Mods /> },
   settings: { label: "Paramètres", render: () => <SettingsBoard /> },
+  skins: { label: "Skins", render: () => <Skins /> },
+  "skin-editor": { label: "Skins — modifier", render: () => <Skins editing /> },
   crash: {
     label: "Plantage du jeu",
     render: () => (
@@ -235,7 +274,7 @@ function Board() {
               {screen.label}
             </a>
           </figcaption>
-          <div className="w-fit">{id === "crash" || id === "consent" ? <a href={`?screen=${id}`}>Ouvrir l'écran</a> : screen.render()}</div>
+          <div className="w-fit">{id === "crash" || id === "consent" || id === "skin-editor" ? <a href={`?screen=${id}`}>Ouvrir l'écran</a> : screen.render()}</div>
         </figure>
       ))}
     </div>

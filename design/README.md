@@ -10,10 +10,11 @@ msedge --headless=new --window-size=1100,680 --virtual-time-budget=8000 \
   --screenshot=home.png "http://localhost:1420/design/board.html?screen=home"
 ```
 
-Écrans : `login`, `login-error`, `home`, `installing`, `mods`, `settings`, `crash`, `consent`.
+Écrans : `login`, `login-error`, `home`, `installing`, `mods`, `skins`, `skin-editor`, `settings`, `crash`, `consent`.
 
-Les icônes des modes sont des textures du jeu extraites du client installé dans
-`design/placeholder/` (ignoré par git) : elles ne doivent pas entrer dans le dépôt. Les vraies
+Les icônes des modes, les skins par défaut (`defaults/`), le skin et la cape de démonstration
+sont extraits du client installé ou téléchargés dans `design/placeholder/` (ignoré par git) : ils ne
+doivent pas entrer dans le dépôt. Les vraies
 images viendront du champ `image` des modes du manifeste.
 
 ## Direction
@@ -40,3 +41,7 @@ images viendront du champ `image` des modes du manifeste.
   Contours, cases et boutons reprennent les utilitaires `mc-frame`, `mc-slot` et `mc-bevel` du site.
 - **Barre de titre** : Accueil et Mods à gauche ; compte, paramètres (engrenage) et boutons de
   fenêtre (réduire, agrandir, fermer) en petits blocs en relief à droite.
+- **Skins** (inspiré de Modrinth App) : onglet dédié avec l'aperçu 3D à gauche, « Mes skins »
+  (ajout par clic ou glisser-déposer) et les skins par défaut du jeu, en vignettes 2D légères. La
+  fenêtre « Modifier le skin » change la texture, les bras (classiques ou fins) et la cape parmi
+  celles du compte. L'aperçu 3D ne tourne que de gauche à droite : ni inclinaison, ni zoom.

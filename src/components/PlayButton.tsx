@@ -24,7 +24,7 @@ export function PlayButton({ state, onPlay }: { state: PlayState; onPlay: () => 
         </span>
       </button>
 
-      <p className="h-4 text-center text-xs text-muted-foreground" aria-live="polite">
+      <p className="relative h-4 text-center text-xs font-semibold text-white [text-shadow:0_1px_3px_rgb(0_0_0/0.7)]" aria-live="polite">
         {state.kind === "installing" && progress && (
           <>
             {PHASES[progress.phase]} · <span className="font-pixel text-[11px]">{number.format(progress.done)}/{number.format(progress.total)}</span>

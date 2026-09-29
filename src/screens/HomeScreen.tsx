@@ -6,10 +6,10 @@ import { NewsList } from "@/components/NewsList";
 import { PlayButton } from "@/components/PlayButton";
 import { SkinViewer } from "@/components/SkinViewer";
 import { secondaryButton } from "@/lib/buttons";
-import type { ModeStatus, NewsItem, PlayState } from "@/types";
+import type { ModeStatus, NewsItem, PlayState, SkinLook } from "@/types";
 
 type Props = {
-  skin: string;
+  look: SkinLook;
   /** Noms des mods activés, dans l'ordre du catalogue. */
   enabledMods: string[];
   onManageMods: () => void;
@@ -25,7 +25,7 @@ type Props = {
 
 const date = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
 
-export function HomeScreen({ skin, enabledMods, onManageMods, play, onPlay, minecraftVersion, modes, destination, news, onOpenLink }: Props) {
+export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, minecraftVersion, modes, destination, news, onOpenLink }: Props) {
   const [featured, ...others] = news;
   const online = modes.filter((mode) => mode.players !== null);
   const players = online.reduce((sum, mode) => sum + (mode.players ?? 0), 0);
@@ -56,7 +56,7 @@ export function HomeScreen({ skin, enabledMods, onManageMods, play, onPlay, mine
           <div className="flex shrink-0 items-end gap-2">
             <div className="relative -mb-8">
               <div aria-hidden className="absolute bottom-7 left-1/2 h-4 w-28 -translate-x-1/2 rounded-[50%] bg-black/60 blur-[6px]" />
-              <SkinViewer skin={skin} width={170} height={270} />
+              <SkinViewer look={look} width={170} height={270} />
             </div>
             <div className="flex flex-col items-center gap-3 pb-1">
               <PlayButton state={play} onPlay={onPlay} />

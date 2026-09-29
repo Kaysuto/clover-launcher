@@ -34,4 +34,15 @@ export type ModInfo = {
   enabled: boolean;
 };
 
-export type Tab = "home" | "mods" | "settings";
+export type Tab = "home" | "mods" | "skins" | "settings";
+
+/** Bras « classiques » (4 px) ou « fins » (3 px), comme dans Minecraft. */
+export type SkinModel = "classic" | "slim";
+
+/** Cape possédée par le compte Minecraft. */
+export type Cape = { id: string; name: string; texture: string };
+
+/** Apparence du compte actif : texture du skin, forme des bras, cape portée. */
+export type SkinLook = { texture: string; model: SkinModel; cape: Cape | null };
+
+export type SavedSkin = { id: string; name: string; texture: string; model: SkinModel };
