@@ -18,6 +18,10 @@ type Props = {
   onClose: () => void;
 };
 
+/** Petits blocs en relief, comme les boutons du jeu. */
+const windowButton =
+  "mc-bevel grid size-7 place-items-center bg-secondary text-muted-foreground [--mc-radius:5px] hover:text-foreground";
+
 /** Barre de titre de la fenêtre sans cadre : zone de déplacement, navigation, compte, fenêtre. */
 export function TitleBar({ session, onMinimize, onClose }: Props) {
   return (
@@ -58,12 +62,12 @@ export function TitleBar({ session, onMinimize, onClose }: Props) {
         </button>
       )}
 
-      <div className="flex h-full">
-        <button type="button" onClick={onMinimize} aria-label="Réduire" className="grid w-12 place-items-center text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
-          <Minus className="size-4" aria-hidden />
+      <div className="flex gap-1.5 pr-3">
+        <button type="button" onClick={onMinimize} aria-label="Réduire" className={windowButton}>
+          <Minus className="size-3.5" strokeWidth={2.75} aria-hidden />
         </button>
-        <button type="button" onClick={onClose} aria-label="Fermer" className="grid w-12 place-items-center text-muted-foreground transition-colors hover:bg-destructive hover:text-white">
-          <X className="size-4" aria-hidden />
+        <button type="button" onClick={onClose} aria-label="Fermer" className={`${windowButton} hover:bg-destructive hover:text-white`}>
+          <X className="size-3.5" strokeWidth={2.75} aria-hidden />
         </button>
       </div>
     </header>
