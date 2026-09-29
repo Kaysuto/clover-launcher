@@ -11,16 +11,24 @@ import { createRoot } from "react-dom/client";
 
 import "@/styles.css";
 import { TitleBar } from "@/components/TitleBar";
+import { type RecentVote, VoteTicker } from "@/components/VoteTicker";
 import { CrashDialog, CrashReportConsentDialog } from "@/screens/Dialogs";
 import { HomeScreen } from "@/screens/HomeScreen";
 import { LoginScreen, type LoginState } from "@/screens/LoginScreen";
 import { ModsScreen } from "@/screens/ModsScreen";
 import { type Settings, SettingsScreen } from "@/screens/SettingsScreen";
+import { cn } from "@/lib/utils";
 import type { ModInfo, ModeStatus, NewsItem, PlayState, Profile, Tab } from "@/types";
 
 const icon = (name: string) => new URL(`./placeholder/${name}.png`, import.meta.url).href;
 const skin = new URL("./placeholder/skin.png", import.meta.url).href;
 const noop = () => {};
+
+const votes: RecentVote[] = [
+  { player: "TournePain6", votedAt: "2026-09-29T21:10:00Z" },
+  { player: "Zarma78", votedAt: "2026-09-29T21:04:00Z" },
+  { player: "Tarakiwi", votedAt: "2026-09-29T20:58:00Z" },
+];
 
 const profile: Profile = { uuid: "6b4d8d4f-8fda-498f-b402-e2cfbbf6d144", name: "Kaysuto" };
 
@@ -106,9 +114,16 @@ const single = new URLSearchParams(location.search).has("screen");
 function Window({ children, tab }: { children: ReactNode; tab?: Tab }) {
   const [maximized, setMaximized] = useState(false);
   return (
-    <div className={single ? "flex h-screen w-screen flex-col overflow-hidden bg-background" : "flex h-[680px] w-[1100px] flex-col overflow-hidden bg-background"}>
+    <div
+      className={cn(
+        "flex flex-col overflow-hidden bg-background",
+        single ? "h-full w-full" : "h-[680px] w-[1100px]",
+        !maximized && "rounded-[14px] ring-1 ring-white/10",
+      )}
+    >
       <TitleBar
         session={tab ? { profile, skin, tab, onTab: noop, onAccount: noop } : undefined}
+        activity={<VoteTicker votes={votes} onVote={noop} />}
         maximized={maximized}
         onMinimize={noop}
         onToggleMaximize={() => setMaximized((value) => !value)}
@@ -209,7 +224,8 @@ const SCREENS: Record<string, { label: string; render: () => ReactNode }> = {
 
 function Board() {
   const only = new URLSearchParams(location.search).get("screen");
-  if (only && SCREENS[only]) return <>{SCREENS[only].render()}</>;
+  // Écran seul : posé sur un « bureau » gris, pour voir les coins arrondis de la fenêtre.
+  if (only && SCREENS[only]) return <div className="h-screen w-screen bg-[#3a3d42] p-3">{SCREENS[only].render()}</div>;
   return (
     <div className="flex flex-col gap-10 bg-[#0a0907] p-10">
       {Object.entries(SCREENS).map(([id, screen]) => (
@@ -219,7 +235,7 @@ function Board() {
               {screen.label}
             </a>
           </figcaption>
-          <div className="w-fit ring-1 ring-border">{id === "crash" || id === "consent" ? <a href={`?screen=${id}`}>Ouvrir l'écran</a> : screen.render()}</div>
+          <div className="w-fit">{id === "crash" || id === "consent" ? <a href={`?screen=${id}`}>Ouvrir l'écran</a> : screen.render()}</div>
         </figure>
       ))}
     </div>

@@ -1,6 +1,6 @@
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Newspaper } from "lucide-react";
 
-import { Backdrop } from "@/components/Backdrop";
+import { HeroBackdrop } from "@/components/Backdrop";
 import { ModeHotbar } from "@/components/ModeHotbar";
 import { NewsList } from "@/components/NewsList";
 import { PlayButton } from "@/components/PlayButton";
@@ -33,17 +33,17 @@ export function HomeScreen({ skin, enabledMods, onManageMods, play, onPlay, mine
 
   return (
     <main className="flex min-h-0 flex-1 flex-col">
-      <section className="relative flex h-[clamp(300px,46vh,440px)] shrink-0 items-end overflow-hidden">
-        <Backdrop className="[mask-image:linear-gradient(to_bottom,black_65%,transparent)]" />
+      <section className="relative flex h-[clamp(310px,46vh,440px)] shrink-0 items-end overflow-hidden text-white">
+        <HeroBackdrop />
 
-        <div className="relative flex w-full items-end justify-between gap-8 px-12 pb-8">
+        <div className="relative flex w-full items-end justify-between gap-8 px-12 pb-9">
           {featured ? (
             <article className="flex max-w-[540px] flex-col gap-3">
-              <p className="text-[11px] font-bold tracking-[0.14em] text-accent uppercase">
-                À la une · <time dateTime={featured.publishedAt}>{date.format(new Date(featured.publishedAt))}</time>
+              <p className="mc-frame flex items-center gap-1.5 self-start bg-black/55 px-2.5 py-1 text-[11px] font-semibold [--mc-radius:6px]">
+                <Newspaper className="size-3.5 text-accent" aria-hidden />À la une · <time dateTime={featured.publishedAt}>{date.format(new Date(featured.publishedAt))}</time>
               </p>
-              <h1 className="font-display text-[clamp(28px,3.4vw,40px)] leading-[1.05] text-balance">{featured.title}</h1>
-              <p className="line-clamp-2 text-[13px] leading-relaxed text-[#cfc8b8]">{featured.excerpt}</p>
+              <h1 className="font-display text-[clamp(28px,3.4vw,40px)] leading-[1.05] text-balance mc-text-shadow">{featured.title}</h1>
+              <p className="line-clamp-2 text-[13px] leading-relaxed text-white/80">{featured.excerpt}</p>
               <button type="button" onClick={() => onOpenLink(featured.url)} className={`${secondaryButton} mt-1 self-start`}>
                 Lire l'article
                 <ArrowUpRight className="size-4" aria-hidden />
@@ -60,14 +60,16 @@ export function HomeScreen({ skin, enabledMods, onManageMods, play, onPlay, mine
             </div>
             <div className="flex flex-col items-center gap-3 pb-1">
               <PlayButton state={play} onPlay={onPlay} />
-              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              <p className="mc-frame flex h-9 items-center gap-2 bg-card/90 px-3.5 text-xs text-muted-foreground [--mc-radius:6px]">
                 <span className={online.length > 0 ? "size-2 rounded-full bg-primary" : "size-2 rounded-full bg-destructive"} aria-hidden />
                 {online.length > 0 ? (
                   <>
-                    <span className="font-pixel text-[12px] text-foreground">{players}</span> joueurs en ligne
+                    <span className="font-semibold text-foreground">En ligne</span>
+                    <span aria-hidden>·</span>
+                    <span className="font-pixel text-[12px] text-foreground">{players}</span> joueurs
                   </>
                 ) : (
-                  "Serveur injoignable"
+                  <span className="font-semibold text-destructive">Hors ligne</span>
                 )}
                 <span aria-hidden>·</span>
                 Minecraft <span className="font-pixel text-[12px] text-foreground">{minecraftVersion}</span>

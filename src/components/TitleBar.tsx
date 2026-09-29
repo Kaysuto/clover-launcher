@@ -1,4 +1,5 @@
 import { ChevronDown, Copy, Minus, Settings, Square, X } from "lucide-react";
+import type { ReactNode } from "react";
 
 import monogram from "@/assets/brand/monogram.webp";
 import { PlayerHead } from "@/components/PlayerHead";
@@ -13,6 +14,8 @@ const TABS: { id: Tab; label: string }[] = [
 type Props = {
   /** Absent avant la connexion : ni onglets ni compte. */
   session?: { profile: Profile; skin: string; tab: Tab; onTab: (tab: Tab) => void; onAccount: () => void };
+  /** Affiché à gauche du compte (derniers votes). */
+  activity?: ReactNode;
   maximized: boolean;
   onMinimize: () => void;
   onToggleMaximize: () => void;
@@ -27,7 +30,7 @@ const windowButton =
  * Barre de titre de la fenêtre sans cadre : zone de déplacement (double-clic pour agrandir),
  * navigation, compte, boutons de fenêtre.
  */
-export function TitleBar({ session, maximized, onMinimize, onToggleMaximize, onClose }: Props) {
+export function TitleBar({ session, activity, maximized, onMinimize, onToggleMaximize, onClose }: Props) {
   return (
     <header data-tauri-drag-region className="flex h-13 shrink-0 items-center gap-6 border-b border-border bg-[#100e0b] pl-4">
       <img src={monogram} alt="Clover Games" width={30} height={30} data-tauri-drag-region />
@@ -53,6 +56,8 @@ export function TitleBar({ session, maximized, onMinimize, onToggleMaximize, onC
       )}
 
       <div data-tauri-drag-region className="h-full flex-1" />
+
+      {session && activity}
 
       {session && (
         <button

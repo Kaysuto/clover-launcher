@@ -26,9 +26,13 @@ images viendront du champ `image` des modes du manifeste.
   mémoire).
 - **Pas de gros logo** : l'accueil met en avant l'actualité à la une (titre, résumé, lien), le
   monogramme reste dans la barre de titre.
-- **Pas de photo en fond** : ni capture du serveur ni image d'article derrière l'interface. Le fond
-  (`src/components/Backdrop.tsx`) se limite à deux lueurs vert trèfle et or et à des pixels épars
-  comme des particules. Les images d'articles ne servent qu'en vignette dans la liste des actualités.
+- **Fond du hero repris du site** (`src/components/Backdrop.tsx`, d'après `PageHero.tsx`, teinte
+  « forest ») : aplat vert en dégradé, blocs de feuillage pixelisés, lueur. Bord bas droit, sans
+  diagonale. Jamais de photo ni de capture derrière l'interface ; les images d'articles ne servent
+  qu'en vignette dans la liste des actualités.
+- **Fenêtre** : coins arrondis (14 px), sauf une fois agrandie.
+- **Derniers votes** : à gauche du compte, une pastille fait défiler « Pseudo a voté pour le
+  serveur » (tête du joueur) ; un clic ouvre la page de vote du site.
 - **Signature** : le bouton « Jouer », dalle dorée en relief taillée comme les lettres du logo,
   dont la tranche s'écrase au clic et dont la face se remplit pendant l'installation.
 - **Idiome Minecraft** : les modes sont une barre d'inventaire. Le nombre de joueurs s'affiche comme

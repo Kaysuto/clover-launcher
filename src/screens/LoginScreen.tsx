@@ -1,7 +1,7 @@
 import { ArrowUpRight } from "lucide-react";
 
 import monogram from "@/assets/brand/monogram.webp";
-import { Backdrop } from "@/components/Backdrop";
+import { HeroBackdrop } from "@/components/Backdrop";
 
 export type LoginState = { kind: "idle" } | { kind: "waiting" } | { kind: "error"; message: string };
 
@@ -18,14 +18,14 @@ function MicrosoftLogo() {
 
 export function LoginScreen({ state, onLogin, onOpenLink }: { state: LoginState; onLogin: () => void; onOpenLink: (url: string) => void }) {
   return (
-    <main className="relative flex flex-1 flex-col items-center justify-center overflow-hidden pb-10">
-      <Backdrop />
+    <main className="relative flex flex-1 flex-col items-center justify-center overflow-hidden pb-10 text-white">
+      <HeroBackdrop />
 
       <img src={monogram} alt="Clover Games" width={72} height={72} className="relative drop-shadow-[0_10px_20px_rgb(0_0_0/0.6)]" />
 
       <div className="relative mt-6 flex w-[440px] flex-col items-center gap-5 text-center">
-        <h1 className="font-display text-[30px] leading-none">Connecte-toi pour jouer</h1>
-        <p className="text-sm leading-relaxed text-muted-foreground">
+        <h1 className="font-display text-[30px] leading-none mc-text-shadow">Connecte-toi pour jouer</h1>
+        <p className="text-sm leading-relaxed text-white/80">
           Utilise le compte Microsoft qui possède Minecraft: Java Edition. La connexion se fait dans ton navigateur&nbsp;: le launcher ne voit jamais ton mot de passe.
         </p>
 
@@ -40,9 +40,9 @@ export function LoginScreen({ state, onLogin, onOpenLink }: { state: LoginState;
         </button>
 
         <div className="min-h-12" aria-live="polite">
-          {state.kind === "waiting" && <p className="text-xs text-muted-foreground">Termine la connexion dans l'onglet qui vient de s'ouvrir, puis reviens ici.</p>}
+          {state.kind === "waiting" && <p className="text-xs text-white/75">Termine la connexion dans l'onglet qui vient de s'ouvrir, puis reviens ici.</p>}
           {state.kind === "error" && (
-            <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-left text-[13px] leading-snug text-[#f3a19e]">
+            <p role="alert" className="mc-frame bg-black/60 px-4 py-2.5 text-left text-[13px] leading-snug text-[#ffb3b0] [--mc-radius:6px]">
               {state.message}
             </p>
           )}
@@ -52,7 +52,7 @@ export function LoginScreen({ state, onLogin, onOpenLink }: { state: LoginState;
       <button
         type="button"
         onClick={() => onOpenLink("https://www.minecraft.net/fr-fr/store/minecraft-java-bedrock-edition-pc")}
-        className="absolute bottom-6 flex items-center gap-1 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+        className="absolute bottom-6 flex items-center gap-1 text-xs font-semibold text-white/75 transition-colors hover:text-white"
       >
         Pas encore Minecraft&nbsp;? Acheter Minecraft: Java Edition
         <ArrowUpRight className="size-3.5" aria-hidden />
