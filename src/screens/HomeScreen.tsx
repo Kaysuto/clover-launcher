@@ -32,6 +32,7 @@ const date = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" })
 
 export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, versions, selectedVersion, onSelectVersion, versionOpen, modes, destination, news, onOpenLink }: Props) {
   const [featured, ...others] = news;
+  const current = versions.find((version) => version.id === selectedVersion) ?? versions[0];
   const online = modes.filter((mode) => mode.players !== null);
   const players = online.reduce((sum, mode) => sum + (mode.players ?? 0), 0);
   const destinationName = modes.find((mode) => mode.id === destination)?.name ?? "Lobby";
@@ -64,10 +65,12 @@ export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, vers
               <SkinViewer look={look} width={170} height={270} />
             </div>
             <div className="flex flex-col items-center gap-3 pb-1">
-              <PlayButton state={play} onPlay={onPlay} />
-              <div className="w-[300px]">
-                <VersionPicker versions={versions} selected={selectedVersion} onSelect={onSelectVersion} defaultOpen={versionOpen} />
-              </div>
+              <PlayButton
+                state={play}
+                onPlay={onPlay}
+                version={`Minecraft ${current.id} · ${current.loader.split(" ")[0]}${current.joinable ? "" : " · solo"}`}
+                picker={<VersionPicker versions={versions} selected={selectedVersion} onSelect={onSelectVersion} defaultOpen={versionOpen} />}
+              />
               <p className="mc-frame flex h-9 items-center gap-2 bg-card/90 px-3.5 text-xs text-muted-foreground [--mc-radius:6px]">
                 <span className={online.length > 0 ? "size-2 rounded-full bg-primary" : "size-2 rounded-full bg-destructive"} aria-hidden />
                 {online.length > 0 ? (

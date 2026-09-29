@@ -1,4 +1,4 @@
-import { Check, ChevronDown, TriangleAlert } from "lucide-react";
+import { ArrowLeftRight, Check, TriangleAlert } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -13,7 +13,8 @@ type Props = {
 };
 
 /**
- * Version de Minecraft qui sera lancée, modifiable. La version du serveur est proposée en premier :
+ * Changement de version, à droite du bouton « Jouer » (la version lancée est écrite dessous). La
+ * version du serveur est proposée en premier :
  * c'est la seule avec laquelle on peut rejoindre Clover Games. Les autres servent à jouer en solo
  * ou sur d'autres serveurs, et le disent clairement.
  */
@@ -26,22 +27,19 @@ export function VersionPicker({ versions, selected, onSelect, defaultOpen }: Pro
         <button
           type="button"
           aria-label={`Version de Minecraft : ${current.id}. Changer`}
-          className="mc-frame flex h-9 w-full items-center gap-2 whitespace-nowrap bg-card/90 px-3.5 text-left text-xs transition-colors hover:bg-card data-[state=open]:bg-card [--mc-radius:6px]"
+          title="Changer de version"
+          className="play-slab h-[86px] w-[72px] shrink-0 bg-none [background:linear-gradient(180deg,#5b5346,#3e382e)] text-white data-[state=open]:brightness-90"
         >
-          <span className="text-muted-foreground">Minecraft</span>
-          <span className="font-pixel text-[12px] text-foreground">{current.id}</span>
-          <span aria-hidden className="text-muted-foreground">·</span>
-          <span className="truncate text-muted-foreground">{current.loader.split(" ")[0]}</span>
-          {current.joinable ? (
-            <span className="ml-auto rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">Serveur</span>
-          ) : (
-            <TriangleAlert className="ml-auto size-3.5 text-accent" aria-label="Ne peut pas rejoindre Clover Games" />
+          <ArrowLeftRight className="size-7" strokeWidth={2.5} aria-hidden />
+          {!current.joinable && (
+            <span className="absolute -top-2 -right-2 grid size-6 place-items-center rounded-full border-2 border-[var(--mc-outline)] bg-accent text-accent-foreground">
+              <TriangleAlert className="size-3.5" strokeWidth={2.75} aria-label="Ne peut pas rejoindre Clover Games" />
+            </span>
           )}
-          <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden />
         </button>
       </PopoverTrigger>
 
-      <PopoverContent align="end" sideOffset={8} className="mc-frame w-[340px] gap-0 border-[var(--mc-outline)] bg-card p-0 text-white ring-0">
+      <PopoverContent align="end" sideOffset={16} className="mc-frame w-[340px] gap-0 border-[var(--mc-outline)] bg-card p-0 text-white ring-0">
         <div className="border-b border-border px-4 py-3">
           <h2 className="font-display text-lg leading-none">Version de Minecraft</h2>
         </div>
