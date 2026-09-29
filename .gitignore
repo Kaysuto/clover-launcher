@@ -29,3 +29,6 @@ dist-ssr
 
 # Manifeste généré et signé par scripts/manifest.mjs
 /manifest/dist/
+
+# Textures Mojang extraites du client pour les maquettes : jamais dans le dépôt
+/design/placeholder/

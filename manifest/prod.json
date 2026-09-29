@@ -12,14 +12,14 @@
     { "id": "creatif", "name": "Créatif" }
   ],
   "mods": [
-    { "slug": "sodium", "category": "performance", "default": true, "description": "Moteur de rendu optimisé : beaucoup plus d'images par seconde." },
+    { "slug": "sodium", "category": "performance", "default": true, "description": "Moteur de rendu optimisé : beaucoup plus d'images par seconde." },
     { "slug": "ferrite-core", "category": "performance", "default": true, "description": "Réduit la mémoire utilisée par le jeu." },
     { "slug": "immediatelyfast", "category": "performance", "default": true, "description": "Accélère l'affichage de l'interface, du texte et des entités." },
     { "slug": "entityculling", "category": "performance", "default": true, "description": "Ignore les entités cachées derrière des blocs." },
     { "slug": "moreculling", "category": "performance", "default": true, "description": "Ignore les faces de blocs que tu ne peux pas voir." },
     { "slug": "dynamic-fps", "category": "performance", "default": true, "description": "Réduit les images par seconde quand le jeu est en arrière-plan." },
 
-    { "slug": "iris", "category": "visual", "default": false, "description": "Shaders : éclairage et ombres réalistes." },
+    { "slug": "iris", "category": "visual", "default": false, "description": "Shaders : éclairage et ombres réalistes." },
     { "slug": "continuity", "category": "visual", "default": false, "description": "Textures connectées pour les packs qui les utilisent." },
     { "slug": "sodium-extra", "category": "visual", "default": false, "description": "Réglages graphiques supplémentaires pour Sodium." },
     { "slug": "reeses-sodium-options", "category": "visual", "default": false, "description": "Menu des options graphiques plus lisible." },
