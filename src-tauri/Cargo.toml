@@ -33,6 +33,7 @@ keyring = "4.2.0"
 futures-util = "0.3.34"
 sha1 = "0.11.0"
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+ed25519-dalek = "2"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

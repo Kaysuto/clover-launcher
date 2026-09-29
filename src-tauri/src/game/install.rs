@@ -5,9 +5,10 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use super::download::{download_all, ensure, Download};
+use super::download::{download_all, ensure, Checksum, Download};
 use super::version::{allowed, merge_libraries, VersionJson};
-use super::{java, GameError, Paths, Progress, Result, Target};
+use super::manifest::Manifest;
+use super::{java, GameError, Paths, Progress, Result};
 
 const VERSION_MANIFEST_URL: &str = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 const RESOURCES_URL: &str = "https://resources.download.minecraft.net";
@@ -47,11 +48,12 @@ struct AssetObject {
 pub async fn install(
     http: &reqwest::Client,
     paths: &Paths,
-    target: &Target,
+    manifest: &Manifest,
     progress: &(dyn Fn(Progress) + Sync),
 ) -> Result<Installation> {
-    let vanilla = vanilla_json(http, paths, target.minecraft).await?;
-    let loader = fabric_json(http, paths, target).await?;
+    let minecraft = &manifest.minecraft.version;
+    let vanilla = vanilla_json(http, paths, minecraft).await?;
+    let loader = fabric_json(http, paths, minecraft, &manifest.fabric.loader).await?;
 
     let component = vanilla
         .java_version
@@ -69,14 +71,21 @@ pub async fn install(
         if !allowed(&library.rules, &[]) {
             continue;
         }
-        let Some(mut resolved) = library.resolve() else { continue };
-        if resolved.sha1.is_none() {
+        let Some(resolved) = library.resolve() else { continue };
+        let sha1 = match resolved.sha1 {
+            Some(sha1) => sha1,
             // fabric-loader est publié sans empreinte dans le profil : la lire sur le dépôt Maven.
-            resolved.sha1 = Some(maven_sha1(http, &resolved.url).await?);
-        }
+            None => maven_sha1(http, &resolved.url).await?,
+        };
         let path = paths.libraries.join(&resolved.path);
         classpath.push(path.clone());
-        downloads.push(Download { url: resolved.url, path, sha1: resolved.sha1, size: resolved.size, executable: false });
+        downloads.push(Download {
+            url: resolved.url,
+            path,
+            checksum: Some(Checksum::Sha1(sha1)),
+            size: resolved.size,
+            executable: false,
+        });
     }
 
     let client = &vanilla
@@ -89,7 +98,7 @@ pub async fn install(
     downloads.push(Download {
         url: client.url.clone(),
         path: client_jar,
-        sha1: client.sha1.clone(),
+        checksum: client.sha1.clone().map(Checksum::Sha1),
         size: client.size,
         executable: false,
     });
@@ -101,7 +110,7 @@ pub async fn install(
         downloads.push(Download {
             url: logging.file.url.clone(),
             path,
-            sha1: Some(logging.file.sha1.clone()),
+            checksum: Some(Checksum::Sha1(logging.file.sha1.clone())),
             size: Some(logging.file.size),
             executable: false,
         });
@@ -117,7 +126,7 @@ pub async fn install(
     ensure(http, &Download {
         url: index_ref.url.clone(),
         path: index_path.clone(),
-        sha1: Some(index_ref.sha1.clone()),
+        checksum: Some(Checksum::Sha1(index_ref.sha1.clone())),
         size: Some(index_ref.size),
         executable: false,
     })
@@ -131,7 +140,7 @@ pub async fn install(
             Download {
                 url: format!("{RESOURCES_URL}/{prefix}/{hash}"),
                 path: paths.assets.join("objects").join(prefix).join(&hash),
-                sha1: Some(hash.clone()),
+                checksum: Some(Checksum::Sha1(hash.clone())),
                 size: Some(size),
                 executable: false,
             }
@@ -153,18 +162,24 @@ async fn vanilla_json(http: &reqwest::Client, paths: &Paths, id: &str) -> Result
             .into_iter()
             .find(|entry| entry.id == id)
             .ok_or_else(|| GameError::InvalidVersion(format!("version {id} inconnue de Mojang")))?;
-        ensure(http, &Download { url: entry.url, path: path.clone(), sha1: Some(entry.sha1), size: None, executable: false })
-            .await?;
+        ensure(http, &Download {
+            url: entry.url,
+            path: path.clone(),
+            checksum: Some(Checksum::Sha1(entry.sha1)),
+            size: None,
+            executable: false,
+        })
+        .await?;
     }
     read_json(&path).await
 }
 
-async fn fabric_json(http: &reqwest::Client, paths: &Paths, target: &Target) -> Result<VersionJson> {
-    let id = format!("fabric-loader-{}-{}", target.fabric_loader, target.minecraft);
+async fn fabric_json(http: &reqwest::Client, paths: &Paths, minecraft: &str, loader: &str) -> Result<VersionJson> {
+    let id = format!("fabric-loader-{loader}-{minecraft}");
     let path = paths.versions.join(&id).join(format!("{id}.json"));
     if tokio::fs::metadata(&path).await.is_err() {
-        let url = format!("{FABRIC_META_URL}/{}/{}/profile/json", target.minecraft, target.fabric_loader);
-        ensure(http, &Download { url, path: path.clone(), sha1: None, size: None, executable: false }).await?;
+        let url = format!("{FABRIC_META_URL}/{minecraft}/{loader}/profile/json");
+        ensure(http, &Download { url, path: path.clone(), checksum: None, size: None, executable: false }).await?;
     }
     read_json(&path).await
 }

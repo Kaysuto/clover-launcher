@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter};
 
 use super::install::Installation;
 use super::version::expand;
-use super::{GameError, Paths, Result, Target};
+use super::{GameError, Paths, Result};
 use crate::auth::Session;
 
 /// Quart de la mémoire du poste, borné entre 2 et 6 Go.
@@ -21,7 +21,7 @@ pub async fn spawn(
     paths: &Paths,
     installation: Installation,
     session: &Session,
-    target: &Target,
+    server: &str,
 ) -> Result<()> {
     let Installation { java, vanilla, loader, classpath, logging_argument } = installation;
     let natives = paths.natives.join(&loader.id);
@@ -46,7 +46,7 @@ pub async fn spawn(
         ("classpath", classpath),
         ("launcher_name", "clover-launcher".into()),
         ("launcher_version", env!("CARGO_PKG_VERSION").into()),
-        ("quickPlayMultiplayer", target.server.into()),
+        ("quickPlayMultiplayer", server.to_owned()),
     ];
     let features = ["is_quick_play_multiplayer"];
 

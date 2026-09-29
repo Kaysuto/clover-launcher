@@ -5,7 +5,7 @@ import "./App.css";
 
 type Profile = { uuid: string; name: string };
 
-type Progress = { phase: "java" | "libraries" | "assets"; done: number; total: number };
+type Progress = { phase: "java" | "libraries" | "assets" | "mods"; done: number; total: number };
 
 type Game =
   | { kind: "idle"; error?: string }
@@ -16,6 +16,7 @@ const PHASE_LABELS: Record<Progress["phase"], string> = {
   java: "Installation de Java",
   libraries: "Téléchargement de Minecraft et Fabric",
   assets: "Téléchargement des ressources",
+  mods: "Installation des mods",
 };
 
 type State =

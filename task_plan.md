@@ -4,7 +4,7 @@
 Livrer « Clover Launcher » (Windows, macOS, Linux) qui installe et lance le bon Minecraft en un clic et envoie le joueur directement sur le mode choisi. Ce plan en fixe le périmètre et l'architecture avant tout code.
 
 ## Next Step
-Créer le dépôt git privé `Kaysuto/clover-launcher` (accord de Kaysuto requis pour committer et pousser), puis CLO-272 (manifeste signé) ou CLO-269 (maquettes).
+Maquettes UI (CLO-269) puis interface V1 (CLO-274) ; en parallèle, Kaysuto active R2 et le compte Microsoft Store (CLO-271).
 
 ## Current Phase
 Phase 4 terminée ; phases 3 et 5 à lancer

@@ -74,30 +74,37 @@ Crates prévues : `reqwest` (rustls), `tokio`, `serde`, `sha1`/`sha2`, `keyring`
 
 ### 3.3 Manifeste distant
 
-Publié sur `cdn.clovergames.fr/launcher/<canal>/manifest.json` (canaux `prod` et `beta`), **signé en ed25519**. Le launcher embarque la clé publique et refuse un manifeste non signé. Sans cette signature, un accès volé au compte Cloudflare suffirait à pousser un mod malveillant chez tous les joueurs.
+Publié sur `cdn.clovergames.fr/launcher/<canal>/manifest.json` avec sa signature `manifest.json.sig` (ed25519, base64). Le launcher embarque la clé publique et refuse un manifeste non signé ou mal signé. Sans cette signature, un accès volé au compte Cloudflare suffirait à pousser un mod malveillant chez tous les joueurs.
+
+Le champ `serial` (horodatage de construction) croît à chaque publication : le launcher refuse un manifeste plus ancien que le dernier accepté, pour qu'on ne puisse pas lui rejouer une ancienne version signée. Le dernier manifeste valide est gardé dans `~/.cloverlauncher/manifest/` et sert hors ligne.
 
 ```json
 {
   "schema": 1,
-  "minecraft": { "version": "26.2", "sha1": "<sha1 du JSON de version Mojang>" },
+  "serial": 1790709000,
+  "minLauncherVersion": "0.1.0",
+  "minecraft": { "version": "26.2" },
   "fabric": { "loader": "0.19.5" },
   "server": { "host": "play.clovergames.fr" },
-  "modes": [
-    { "id": "bedwars", "name": "BedWars", "image": "https://cdn.clovergames.fr/launcher/modes/bedwars.webp" }
-  ],
+  "modes": [{ "id": "bedwars", "name": "BedWars", "image": null }],
   "mods": [
     {
-      "id": "sodium", "name": "Sodium", "category": "performance",
-      "default": true,
-      "url": "https://cdn.modrinth.com/data/…/sodium-….jar",
-      "sha512": "…", "size": 1234567
+      "id": "iris", "name": "Iris Shaders", "description": "Shaders : éclairage et ombres réalistes.",
+      "category": "visual", "default": false, "hidden": false, "available": true,
+      "version": "1.11.4+26.2-fabric", "requires": ["sodium"],
+      "file": { "filename": "iris-….jar", "url": "https://cdn.modrinth.com/data/…", "sha512": "…", "size": 1234567 }
     }
-  ],
-  "minLauncherVersion": "1.0.0"
+  ]
 }
 ```
 
-Source dans le dépôt (`manifest/prod.json`, `manifest/beta.json`). Un script résout les versions Modrinth compatibles avec la version cible et fige URL et hash. La CI vérifie, signe et envoie le fichier sur R2. L'historique git sert de journal des changements de version.
+- `hidden` : dépendance ajoutée par le script (Fabric API, Cloth Config…), jamais affichée, installée avec les mods qui la requièrent.
+- `available` : faux si le mod ou l'une de ses dépendances n'a pas de version pour cette version de Minecraft ; le launcher le grise.
+- `default` : état initial pour un nouveau joueur.
+
+Source dans le dépôt : `manifest/<canal>.json` (version, loader, serveur, modes, catalogue par slug Modrinth avec catégorie, état par défaut et description en français). `node manifest/manifest.mjs build <canal>` résout sur Modrinth la version Fabric compatible de chaque mod et de ses dépendances obligatoires, fige URL, SHA-512 et taille, puis signe avec la clé désignée par `CLOVER_MANIFEST_KEY`. La CI publiera le résultat sur R2 (CLO-275). L'historique git des sources sert de journal des changements de version.
+
+En développement, tant que le CDN n'existe pas, `CLOVER_MANIFEST_DIR=manifest/dist/prod` fait lire le manifeste local au launcher ; la signature reste vérifiée.
 
 ### 3.4 Installation et lancement
 

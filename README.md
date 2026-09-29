@@ -20,6 +20,16 @@ cd src-tauri && cargo test && cargo clippy --all-targets
 npx tsc --noEmit
 ```
 
+## Manifeste
+
+```bash
+# Résout les mods sur Modrinth et signe (clé privée hors dépôt, dans Sécurités/ du workspace)
+CLOVER_MANIFEST_KEY="../Sécurités/clover-launcher-manifest.pem" npm run manifest -- build prod
+
+# Lancer le launcher sur le manifeste local tant que cdn.clovergames.fr n'existe pas
+CLOVER_MANIFEST_DIR=manifest/dist/prod npm run tauri dev
+```
+
 ## Structure
 
 | Chemin | Rôle |

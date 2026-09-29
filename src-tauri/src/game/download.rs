@@ -1,13 +1,14 @@
 //! Téléchargements parallèles vérifiés.
 //!
 //! Un fichier déjà présent à la bonne taille est considéré comme installé ; tout nouveau
-//! téléchargement est vérifié (SHA-1) avant d'être renommé à sa place définitive. Une coupure
+//! téléchargement est vérifié (SHA-1 ou SHA-512) avant d'être renommé à sa place définitive. Une coupure
 //! laisse au pire un `.part`, repris depuis le début au lancement suivant.
 
 use std::path::{Path, PathBuf};
 
 use futures_util::{stream, StreamExt};
 use sha1::{Digest, Sha1};
+use sha2::Sha512;
 use tokio::io::AsyncWriteExt;
 
 use super::{GameError, Result};
@@ -15,13 +16,51 @@ use super::{GameError, Result};
 const PARALLEL_DOWNLOADS: usize = 16;
 const ATTEMPTS: usize = 3;
 
+/// Empreinte attendue, en hexadécimal minuscule.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Checksum {
+    Sha1(String),
+    Sha512(String),
+}
+
 #[derive(Debug, Clone)]
 pub struct Download {
     pub url: String,
     pub path: PathBuf,
-    pub sha1: Option<String>,
+    pub checksum: Option<Checksum>,
     pub size: Option<u64>,
     pub executable: bool,
+}
+
+enum Hasher {
+    Sha1(Sha1),
+    Sha512(Sha512),
+}
+
+impl Hasher {
+    fn new(checksum: &Checksum) -> Self {
+        match checksum {
+            Checksum::Sha1(_) => Self::Sha1(Sha1::new()),
+            Checksum::Sha512(_) => Self::Sha512(Sha512::new()),
+        }
+    }
+
+    fn update(&mut self, bytes: &[u8]) {
+        match self {
+            Self::Sha1(hasher) => hasher.update(bytes),
+            Self::Sha512(hasher) => hasher.update(bytes),
+        }
+    }
+
+    fn matches(self, checksum: &Checksum) -> bool {
+        let actual = match self {
+            Self::Sha1(hasher) => hex(&hasher.finalize()),
+            Self::Sha512(hasher) => hex(&hasher.finalize()),
+        };
+        match checksum {
+            Checksum::Sha1(expected) | Checksum::Sha512(expected) => actual == *expected,
+        }
+    }
 }
 
 pub fn client() -> reqwest::Client {
@@ -71,9 +110,13 @@ async fn is_installed(download: &Download) -> Result<bool> {
     let Ok(metadata) = tokio::fs::metadata(&download.path).await else {
         return Ok(false);
     };
-    match (download.size, &download.sha1) {
+    match (download.size, &download.checksum) {
         (Some(size), _) => Ok(metadata.len() == size),
-        (None, Some(sha1)) => Ok(&file_sha1(&download.path).await? == sha1),
+        (None, Some(checksum)) => {
+            let mut hasher = Hasher::new(checksum);
+            hasher.update(&tokio::fs::read(&download.path).await?);
+            Ok(hasher.matches(checksum))
+        }
         (None, None) => Ok(true),
     }
 }
@@ -88,10 +131,12 @@ async fn fetch(http: &reqwest::Client, download: &Download) -> Result<()> {
     let partial = download.path.with_file_name(partial_name);
     let mut response = http.get(&download.url).send().await?.error_for_status()?;
     let mut file = tokio::fs::File::create(&partial).await?;
-    let mut hasher = Sha1::new();
+    let mut hasher = download.checksum.as_ref().map(Hasher::new);
     let mut written = 0u64;
     while let Some(chunk) = response.chunk().await? {
-        hasher.update(&chunk);
+        if let Some(hasher) = hasher.as_mut() {
+            hasher.update(&chunk);
+        }
         written += chunk.len() as u64;
         file.write_all(&chunk).await?;
     }
@@ -99,19 +144,17 @@ async fn fetch(http: &reqwest::Client, download: &Download) -> Result<()> {
     drop(file);
 
     let size_ok = download.size.is_none_or(|size| size == written);
-    let sha1_ok = download.sha1.as_ref().is_none_or(|sha1| *sha1 == hex(&hasher.finalize()));
-    if !(size_ok && sha1_ok) {
+    let checksum_ok = match (hasher, &download.checksum) {
+        (Some(hasher), Some(checksum)) => hasher.matches(checksum),
+        _ => true,
+    };
+    if !(size_ok && checksum_ok) {
         let _ = tokio::fs::remove_file(&partial).await;
         return Err(GameError::Corrupted(download.url.clone()));
     }
     set_executable(&partial, download.executable).await?;
     tokio::fs::rename(&partial, &download.path).await?;
     Ok(())
-}
-
-async fn file_sha1(path: &Path) -> Result<String> {
-    let bytes = tokio::fs::read(path).await?;
-    Ok(hex(&Sha1::digest(&bytes)))
 }
 
 fn hex(bytes: &[u8]) -> String {

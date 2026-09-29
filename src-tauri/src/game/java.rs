@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use super::download::{download_all, Download};
+use super::download::{download_all, Checksum, Download};
 use super::{GameError, Result};
 
 const RUNTIMES_URL: &str =
@@ -110,7 +110,7 @@ pub async fn install(
             RuntimeFile::File { executable, downloads: FileDownloads { raw } } => downloads.push(Download {
                 url: raw.url,
                 path,
-                sha1: Some(raw.sha1),
+                checksum: Some(Checksum::Sha1(raw.sha1)),
                 size: Some(raw.size),
                 executable,
             }),

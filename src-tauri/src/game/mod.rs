@@ -4,6 +4,8 @@ mod download;
 mod install;
 mod java;
 mod launch;
+mod manifest;
+mod mods;
 mod version;
 
 use std::path::PathBuf;
@@ -13,20 +15,16 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::auth::Session;
 
-/// Ce que le launcher installe. Codé en dur pour le prototype ; viendra du manifeste distant
-/// signé (CLO-272).
-pub struct Target {
-    pub minecraft: &'static str,
-    pub fabric_loader: &'static str,
-    pub server: &'static str,
-}
-
-pub const TARGET: Target = Target { minecraft: "26.2", fabric_loader: "0.19.5", server: "play.clovergames.fr" };
-
 #[derive(Debug, thiserror::Error)]
 pub enum GameError {
     #[error("Aucun compte connecté.")]
     NotSignedIn,
+    #[error("Une mise à jour du Clover Launcher est nécessaire pour jouer.")]
+    LauncherOutdated,
+    #[error("Impossible de récupérer la configuration du jeu. Vérifie ta connexion Internet.")]
+    ManifestUnavailable,
+    #[error("La configuration du jeu reçue n'est pas signée par Clover Games : elle a été refusée.")]
+    ManifestSignature,
     #[error("Système non pris en charge : {0}.")]
     UnsupportedPlatform(String),
     #[error("Données de version invalides : {0}.")]
@@ -68,7 +66,9 @@ pub struct Paths {
     pub runtimes: PathBuf,
     pub natives: PathBuf,
     pub logs: PathBuf,
+    pub manifest: PathBuf,
     pub game: PathBuf,
+    pub mods: PathBuf,
 }
 
 impl Paths {
@@ -85,7 +85,9 @@ impl Paths {
             runtimes: root.join("runtimes"),
             natives: root.join("natives"),
             logs: root.join("logs"),
+            manifest: root.join("manifest"),
             game: root.join("game"),
+            mods: root.join("game").join("mods"),
         })
     }
 }
@@ -97,6 +99,20 @@ pub async fn play(app: &AppHandle, session: &Session) -> Result<()> {
     let progress = |progress: Progress| {
         let _ = app.emit("install-progress", progress);
     };
-    let installation = install::install(&http, &paths, &TARGET, &progress).await?;
-    launch::spawn(app, &paths, installation, session, &TARGET).await
+    let manifest = manifest::load(&http, &paths.manifest).await?;
+    manifest::check_launcher_version(&manifest)?;
+    let enabled = manifest.default_mods();
+    eprintln!(
+        "[manifest] n°{} : Minecraft {}, Fabric {}, {} mods activés",
+        manifest.serial,
+        manifest.minecraft.version,
+        manifest.fabric.loader,
+        enabled.len()
+    );
+    let installation = install::install(&http, &paths, &manifest, &progress).await?;
+    mods::sync(&http, &paths.mods, &manifest, &enabled, &|done, total| {
+        progress(Progress { phase: "mods", done, total })
+    })
+    .await?;
+    launch::spawn(app, &paths, installation, session, &manifest.server.host).await
 }
