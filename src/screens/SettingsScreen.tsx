@@ -1,7 +1,8 @@
-import { FolderOpen, Gamepad2, HardDrive, Info, MessageCircle, Palette, Plug, Plus, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
+import { FolderOpen, Gamepad2, HardDrive, Info, Palette, Plug, Plus, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { DiscordLogo } from "@/components/DiscordLogo";
 import { PlayerHead } from "@/components/PlayerHead";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
@@ -439,7 +440,7 @@ function About({ about, onOpenLink }: Pick<Props, "about" | "onOpenLink">) {
         <div className="flex flex-wrap gap-2">
           {/* Bleu Discord, comme sur le site (`DISCORD_BLOCK_CLASSES`). */}
           <button type="button" onClick={() => onOpenLink("https://discord.gg/theclovergames")} className="mc-bevel flex h-9 items-center justify-center gap-2 whitespace-nowrap bg-[#5865F2] px-4 text-[13px] font-bold text-white">
-            <MessageCircle className="size-4" aria-hidden />
+            <DiscordLogo className="size-4" />
             Rejoindre le Discord
           </button>
           <button type="button" onClick={() => onOpenLink("https://clovergames.fr")} className={secondaryButton}>
