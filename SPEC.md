@@ -23,7 +23,7 @@ Le launcher suit le serveur : la version, les mods et les modes sont décrits da
 | Notifications | Cloche à gauche des paramètres, pastille du nombre de non lues. Réunit les notifications du site (achats, votes, annonces, succès) et les évènements du jeu (niveau gagné, succès, récompenses). Notification système quand la fenêtre est fermée. |
 | Installation | Java, Minecraft, Fabric et mods téléchargés, vérifiés (hash), reprise après coupure. |
 | Mises à jour | Launcher mis à jour automatiquement ; contenu du jeu resynchronisé à chaque lancement. |
-| Discord | Statut « Joue à Clover Games » via Discord Rich Presence : dans le launcher, puis en jeu avec la durée de la partie, logo Clover et boutons « Rejoindre le Discord » et « Site ». Désactivable dans les paramètres. Le mode en cours (BedWars, Practice…) arrive en V2 avec le mod Clover. |
+| Discord | (ID d'application public `857776082777276426`, embarqué dans `src-tauri/src/presence.rs`) Statut « Joue à Clover Games » via Discord Rich Presence : dans le launcher, puis en jeu avec la durée de la partie, logo Clover et boutons « Rejoindre le Discord » et « Site ». Désactivable dans les paramètres. Le mode en cours (BedWars, Practice…) arrive en V2 avec le mod Clover. |
 | Plantages | Accord demandé au premier lancement. Plantage du launcher envoyé à Sentry si accepté. Plantage du jeu : écran dédié avec copie du log. |
 | Langue | Français uniquement. |
 
