@@ -39,8 +39,11 @@ images viendront du champ `image` des modes du manifeste.
 - **Idiome Minecraft** : les modes sont une barre d'inventaire. Le nombre de joueurs s'affiche comme
   le nombre d'objets d'une case, et le cadre de sélection marque le serveur où « Jouer » envoie.
   Contours, cases et boutons reprennent les utilitaires `mc-frame`, `mc-slot` et `mc-bevel` du site.
-- **Barre de titre** : Accueil et Mods à gauche ; compte, paramètres (engrenage) et boutons de
-  fenêtre (réduire, agrandir, fermer) en petits blocs en relief à droite.
+- **Navigation** : colonne à gauche (`SideNav`), une case d'inventaire par section (Accueil, Mods,
+  Skins) avec le cadre de sélection du jeu sur la section ouverte.
+- **Barre de titre** : monogramme et « Clover Launcher » à gauche ; derniers votes, compte,
+  paramètres (engrenage) et boutons de fenêtre (réduire, agrandir, fermer) en petits blocs en relief
+  à droite.
 - **Skins** (inspiré de Modrinth App) : onglet dédié avec l'aperçu 3D à gauche, « Mes skins »
   (ajout par clic ou glisser-déposer) et les skins par défaut du jeu, en vignettes 2D légères. La
   fenêtre « Modifier le skin » change la texture, les bras (classiques ou fins) et la cape parmi

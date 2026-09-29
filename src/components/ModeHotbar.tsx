@@ -14,16 +14,16 @@ export function ModeHotbar({ modes, destination }: { modes: ModeStatus[]; destin
         const selected = mode.id === destination;
         const label = offline ? `${mode.name}, hors ligne` : `${mode.name}, ${mode.players} joueur${mode.players === 1 ? "" : "s"}`;
         return (
-          <li key={mode.id} className="flex w-[74px] flex-col items-center gap-2" aria-label={label} title={label}>
+          <li key={mode.id} className="flex w-[64px] flex-col items-center gap-2" aria-label={label} title={label}>
             <div className={cn("relative", selected && "outline-[3px] outline-offset-[3px] outline-[#e9e3d4] [outline-style:solid] rounded-[7px]")}>
-              <div className={cn("mc-slot grid size-[74px] place-items-center", offline && "opacity-45")}>
+              <div className={cn("mc-slot grid size-[64px] place-items-center", offline && "opacity-45")}>
                 <img
                   src={mode.icon ?? monogram}
                   alt=""
-                  className={cn("size-10", mode.icon ? "pixelated" : "opacity-70", offline && "grayscale")}
+                  className={cn("size-9", mode.icon ? "pixelated" : "opacity-70", offline && "grayscale")}
                 />
                 {!offline && mode.players! > 0 && (
-                  <span className="absolute right-1.5 bottom-0.5 font-pixel text-[17px] leading-none text-white mc-text-shadow">
+                  <span className="absolute right-1.5 bottom-0.5 font-pixel text-[15px] leading-none text-white mc-text-shadow">
                     {mode.players}
                   </span>
                 )}

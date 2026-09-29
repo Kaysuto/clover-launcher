@@ -10,6 +10,7 @@ import { StrictMode, type ReactNode, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import "@/styles.css";
+import { SideNav } from "@/components/SideNav";
 import { TitleBar } from "@/components/TitleBar";
 import { type RecentVote, VoteTicker } from "@/components/VoteTicker";
 import { CrashDialog, CrashReportConsentDialog } from "@/screens/Dialogs";
@@ -144,7 +145,14 @@ function Window({ children, tab }: { children: ReactNode; tab?: Tab }) {
         onToggleMaximize={() => setMaximized((value) => !value)}
         onClose={noop}
       />
-      {children}
+      {tab ? (
+        <div className="flex min-h-0 flex-1">
+          <SideNav tab={tab} onTab={noop} />
+          <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+        </div>
+      ) : (
+        children
+      )}
     </div>
   );
 }

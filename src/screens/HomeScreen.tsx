@@ -79,7 +79,7 @@ export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, mine
         </div>
       </section>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(340px,420px)] gap-10 px-12 pt-5 pb-6">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(320px,390px)] gap-10 px-12 pt-5 pb-6">
         <section aria-labelledby="modes-title" className="flex min-h-0 flex-col gap-4">
           <h2 id="modes-title" className="font-display text-xl">
             Modes de jeu
