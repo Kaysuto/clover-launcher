@@ -17,6 +17,7 @@ Le launcher suit le serveur : la version, les mods et les modes sont décrits da
 | Connexion | Microsoft uniquement. Le compte doit posséder Minecraft Java, sinon message clair et lien d'achat. Plusieurs comptes, bascule en un clic. |
 | Accueil | Bouton « Jouer » (Quick Play sur `play.clovergames.fr`, arrivée au Lobby). Aperçu 3D du skin du compte actif (façon Laby Launcher). Cartes des 6 modes avec le nombre de joueurs connectés. Actualités du blog du site. Bandeau de maintenance. |
 | Mods | Catalogue organisé (performance, confort), chaque mod activable/désactivable. Un mod indisponible pour la version du serveur est grisé. |
+| Skins | Bibliothèque de skins (ajout d'un `.png`, skins par défaut du jeu), éditeur : texture, bras classiques ou fins, cape parmi celles du compte. Appliqué au compte Minecraft via l'API Mojang. Aperçu 3D en rotation horizontale seule. |
 | Paramètres | RAM (automatique ou manuelle), dossier du jeu, arguments Java avancés, canal bêta (staff). |
 | Installation | Java, Minecraft, Fabric et mods téléchargés, vérifiés (hash), reprise après coupure. |
 | Mises à jour | Launcher mis à jour automatiquement ; contenu du jeu resynchronisé à chaque lancement. |
@@ -29,7 +30,7 @@ Le launcher suit le serveur : la version, les mods et les modes sont décrits da
 - **Canal serveur ↔ mod Clover**, sur le modèle de la LabyMod Server API : Discord Rich Presence piloté par le serveur (mode et partie en cours), fonctions autorisées par mode (par exemple une minimap permise en Créatif et bloquée en PvP, ce qui rouvrirait des mods exclus en V1), bannière de tablist.
 - Côté plugin, indépendamment du launcher : prendre en charge la LabyMod Server API pour les joueurs déjà sous LabyMod (Discord RPC, mode de jeu en cours).
 - Compte du site dans le launcher : boutique, succès, notifications.
-- Discord Rich Presence, bibliothèque de skins avec aperçu avant lancement, amis connectés et leur mode sur l'accueil (module `friends` du plugin).
+- Discord Rich Presence, amis connectés et leur mode sur l'accueil (module `friends` du plugin).
 
 ### Hors périmètre
 
