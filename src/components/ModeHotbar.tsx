@@ -8,7 +8,7 @@ import type { ModeStatus } from "@/types";
  */
 export function ModeHotbar({ modes, destination }: { modes: ModeStatus[]; destination: string }) {
   return (
-    <ul className="flex gap-2.5">
+    <ul className="flex flex-wrap gap-2.5">
       {modes.map((mode) => {
         const offline = mode.players === null;
         const selected = mode.id === destination;

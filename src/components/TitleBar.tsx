@@ -1,4 +1,4 @@
-import { ChevronDown, Minus, X } from "lucide-react";
+import { ChevronDown, Copy, Minus, Settings, Square, X } from "lucide-react";
 
 import monogram from "@/assets/brand/monogram.webp";
 import { PlayerHead } from "@/components/PlayerHead";
@@ -8,13 +8,14 @@ import type { Profile, Tab } from "@/types";
 const TABS: { id: Tab; label: string }[] = [
   { id: "home", label: "Accueil" },
   { id: "mods", label: "Mods" },
-  { id: "settings", label: "Paramètres" },
 ];
 
 type Props = {
   /** Absent avant la connexion : ni onglets ni compte. */
   session?: { profile: Profile; skin: string; tab: Tab; onTab: (tab: Tab) => void; onAccount: () => void };
+  maximized: boolean;
   onMinimize: () => void;
+  onToggleMaximize: () => void;
   onClose: () => void;
 };
 
@@ -22,8 +23,11 @@ type Props = {
 const windowButton =
   "mc-bevel grid size-7 place-items-center bg-secondary text-muted-foreground [--mc-radius:5px] hover:text-foreground";
 
-/** Barre de titre de la fenêtre sans cadre : zone de déplacement, navigation, compte, fenêtre. */
-export function TitleBar({ session, onMinimize, onClose }: Props) {
+/**
+ * Barre de titre de la fenêtre sans cadre : zone de déplacement (double-clic pour agrandir),
+ * navigation, compte, boutons de fenêtre.
+ */
+export function TitleBar({ session, maximized, onMinimize, onToggleMaximize, onClose }: Props) {
   return (
     <header data-tauri-drag-region className="flex h-13 shrink-0 items-center gap-6 border-b border-border bg-[#100e0b] pl-4">
       <img src={monogram} alt="Clover Games" width={30} height={30} data-tauri-drag-region />
@@ -62,9 +66,28 @@ export function TitleBar({ session, onMinimize, onClose }: Props) {
         </button>
       )}
 
+      {session && (
+        <button
+          type="button"
+          aria-label="Paramètres"
+          title="Paramètres"
+          aria-current={session.tab === "settings" ? "page" : undefined}
+          onClick={() => session.onTab("settings")}
+          className={cn(
+            "-ml-4 grid size-9 place-items-center rounded-md transition-colors",
+            session.tab === "settings" ? "bg-secondary text-accent" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+          )}
+        >
+          <Settings className="size-[18px]" aria-hidden />
+        </button>
+      )}
+
       <div className="flex gap-1.5 pr-3">
         <button type="button" onClick={onMinimize} aria-label="Réduire" className={windowButton}>
           <Minus className="size-3.5" strokeWidth={2.75} aria-hidden />
+        </button>
+        <button type="button" onClick={onToggleMaximize} aria-label={maximized ? "Restaurer" : "Agrandir"} className={windowButton}>
+          {maximized ? <Copy className="size-3 -scale-x-100" strokeWidth={2.75} aria-hidden /> : <Square className="size-3" strokeWidth={2.75} aria-hidden />}
         </button>
         <button type="button" onClick={onClose} aria-label="Fermer" className={`${windowButton} hover:bg-destructive hover:text-white`}>
           <X className="size-3.5" strokeWidth={2.75} aria-hidden />

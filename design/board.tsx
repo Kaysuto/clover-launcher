@@ -1,7 +1,7 @@
 /**
  * Planche des maquettes (CLO-269) : chaque écran du launcher rendu avec des données d'exemple,
  * sans Tauri. `npm run dev` puis http://localhost:1420/design/board.html ; `?screen=<id>` affiche
- * un seul écran à la taille de la fenêtre (captures).
+ * un seul écran qui remplit le navigateur (captures, essais de redimensionnement).
  *
  * Les icônes des modes sont des textures du jeu extraites en local dans `design/placeholder/`
  * (ignoré par git) ; les vraies viendront du manifeste.
@@ -35,6 +35,13 @@ const modes: ModeStatus[] = [
 
 const news: NewsItem[] = [
   {
+    title: "PvPSoup : le nouveau mode de combat libre",
+    excerpt: "Soupes, kits et arène ouverte : tout ce qu'il faut savoir avant ta première partie.",
+    image: new URL("./placeholder/banner.png", import.meta.url).href,
+    url: "https://clovergames.fr/blog/pvpsoup-saison-1",
+    publishedAt: "2026-09-20",
+  },
+  {
     title: "Clover Games passe en Minecraft 26.2",
     excerpt: "Ce que ça change pour vous, et pourquoi un client plus ancien ne pourra plus se connecter.",
     image: "https://clovergames.fr/api/uploads/b63633ba-24f1-41a5-9690-096501875113",
@@ -42,7 +49,7 @@ const news: NewsItem[] = [
     publishedAt: "2026-09-12",
   },
   {
-    title: "Voter pour Clover Games : gratuit, et ça rapporte",
+    title: "Voter pour Clover Games : gratuit, et ça rapporte",
     excerpt: "Vingt-et-un paliers de récompenses, une vote party collective et un classement mensuel.",
     image: "https://clovergames.fr/api/uploads/18614fd7-86e6-4864-9d14-fe4f81643dc6",
     url: "https://clovergames.fr/blog/voter-pour-clover-games",
@@ -93,12 +100,18 @@ java.lang.IllegalStateException: GLFW error before init: [0x10008]WGL: Failed to
 	at com.mojang.blaze3d.platform.Window.<init>(Window.java:117)
 	at net.minecraft.client.Minecraft.<init>(Minecraft.java:512)`;
 
+/** Écran seul (`?screen=`) : la fenêtre remplit le navigateur, pour tester le redimensionnement. */
+const single = new URLSearchParams(location.search).has("screen");
+
 function Window({ children, tab }: { children: ReactNode; tab?: Tab }) {
+  const [maximized, setMaximized] = useState(false);
   return (
-    <div className="flex h-[680px] w-[1100px] flex-col overflow-hidden bg-background">
+    <div className={single ? "flex h-screen w-screen flex-col overflow-hidden bg-background" : "flex h-[680px] w-[1100px] flex-col overflow-hidden bg-background"}>
       <TitleBar
         session={tab ? { profile, skin, tab, onTab: noop, onAccount: noop } : undefined}
+        maximized={maximized}
         onMinimize={noop}
+        onToggleMaximize={() => setMaximized((value) => !value)}
         onClose={noop}
       />
       {children}

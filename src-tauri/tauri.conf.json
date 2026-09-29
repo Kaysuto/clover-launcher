@@ -15,8 +15,10 @@
         "title": "Clover Launcher",
         "width": 1100,
         "height": 680,
-        "resizable": false,
-        "center": true
+        "resizable": true,
+        "center": true,
+        "minWidth": 1000,
+        "minHeight": 640
       }
     ],
     "security": {

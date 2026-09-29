@@ -6,7 +6,7 @@ const date = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" })
 
 export function NewsList({ items, onOpen }: { items: NewsItem[]; onOpen: (url: string) => void }) {
   return (
-    <section aria-labelledby="news-title" className="flex min-w-0 flex-col gap-3">
+    <section aria-labelledby="news-title" className="flex min-h-0 min-w-0 flex-col gap-3">
       <div className="flex items-baseline justify-between">
         <h2 id="news-title" className="font-display text-xl">
           Actualités
@@ -18,9 +18,9 @@ export function NewsList({ items, onOpen }: { items: NewsItem[]; onOpen: (url: s
       </div>
 
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Aucune actualité pour le moment.</p>
+        <p className="text-sm text-muted-foreground">Pas d'autre actualité pour le moment.</p>
       ) : (
-        <ul className="flex flex-col gap-1">
+        <ul className="-mr-2 flex min-h-0 flex-col gap-1 overflow-y-auto pr-2">
           {items.map((item) => (
             <li key={item.url}>
               <button

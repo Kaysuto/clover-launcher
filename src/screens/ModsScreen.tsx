@@ -34,7 +34,7 @@ export function ModsScreen({ mods, minecraftVersion, onToggle }: { mods: ModInfo
               </h2>
               <p className="text-xs text-muted-foreground">{category.hint}</p>
             </div>
-            <ul className="grid grid-cols-2 gap-2.5">
+            <ul className="grid grid-cols-[repeat(auto-fill,minmax(340px,1fr))] gap-2.5">
               {items.map((mod) => (
                 <li key={mod.id} className={cn("flex gap-4 rounded-lg border border-border bg-card px-4 py-3.5", !mod.available && "opacity-55")}>
                   <div className="flex min-w-0 flex-1 flex-col gap-1">

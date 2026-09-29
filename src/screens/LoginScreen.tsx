@@ -1,6 +1,6 @@
 import { ArrowUpRight } from "lucide-react";
 
-import logo from "@/assets/brand/logo.webp";
+import monogram from "@/assets/brand/monogram.webp";
 
 export type LoginState = { kind: "idle" } | { kind: "waiting" } | { kind: "error"; message: string };
 
@@ -17,12 +17,15 @@ function MicrosoftLogo() {
 
 export function LoginScreen({ state, onLogin, onOpenLink }: { state: LoginState; onLogin: () => void; onOpenLink: (url: string) => void }) {
   return (
-    <main className="relative flex flex-1 flex-col items-center overflow-hidden">
-      <img src={logo} alt="" aria-hidden className="absolute top-10 left-1/2 w-[900px] -translate-x-1/2 opacity-40 blur-[90px] saturate-150" />
+    <main className="relative flex flex-1 flex-col items-center justify-center overflow-hidden pb-10">
+      <div
+        aria-hidden
+        className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_30%,rgb(82_169_108/0.16),transparent_55%),radial-gradient(ellipse_at_50%_70%,rgb(217_164_65/0.08),transparent_60%)]"
+      />
 
-      <img src={logo} alt="Clover Games" className="relative mt-9 w-[430px] drop-shadow-[0_18px_30px_rgb(0_0_0/0.6)]" />
+      <img src={monogram} alt="Clover Games" width={72} height={72} className="relative drop-shadow-[0_10px_20px_rgb(0_0_0/0.6)]" />
 
-      <div className="relative mt-5 flex w-[440px] flex-col items-center gap-5 text-center">
+      <div className="relative mt-6 flex w-[440px] flex-col items-center gap-5 text-center">
         <h1 className="font-display text-[30px] leading-none">Connecte-toi pour jouer</h1>
         <p className="text-sm leading-relaxed text-muted-foreground">
           Utilise le compte Microsoft qui possède Minecraft: Java Edition. La connexion se fait dans ton navigateur&nbsp;: le launcher ne voit jamais ton mot de passe.
