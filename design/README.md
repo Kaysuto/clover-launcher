@@ -11,7 +11,7 @@ msedge --headless=new --window-size=1100,680 --virtual-time-budget=8000 \
 ```
 
 Écrans : `onboarding-first`, `onboarding-accounts`, `onboarding-error`, `onboarding-import`, `onboarding-done`,
-`signin`, `home`, `notifications`, `installing`, `mods`, `mods-personal`, `skins`, `skin-editor`, `settings`, `crash`.
+`signin`, `home`, `notifications`, `installing`, `mods`, `mods-personal`, `skins`, `skin-editor`, `settings` (+ `-appearance`, `-game`, `-storage`, `-integrations`, `-about`), `crash`.
 
 Les icônes des modes, les skins par défaut (`defaults/`), le skin et la cape de démonstration
 sont extraits du client installé ou téléchargés dans `design/placeholder/` (ignoré par git) : ils ne
@@ -64,3 +64,5 @@ images viendront du champ `image` des modes du manifeste.
   récompenses). Les boutons de la barre de titre sont espacés, jamais collés.
 - **Paramètres** : démarrer avec l'ordinateur, rester dans la zone de notification à la fermeture,
   Discord, rapports de plantage.
+- **Paramètres en six onglets** (colonne à gauche) : Générales, Apparence, Jeu, Stockage,
+  Intégrations (Discord, Steam, rapports de plantage) et À propos.

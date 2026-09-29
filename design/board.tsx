@@ -18,7 +18,7 @@ import { CrashDialog } from "@/screens/Dialogs";
 import { HomeScreen } from "@/screens/HomeScreen";
 import { DEFAULT_IMPORT, OnboardingAccounts, OnboardingDone, OnboardingImport } from "@/screens/OnboardingScreen";
 import { ModsScreen, type ModsView } from "@/screens/ModsScreen";
-import { type Account, type Settings, SettingsScreen } from "@/screens/SettingsScreen";
+import { type Account, type Settings, SettingsScreen, type SettingsTab, type SteamState } from "@/screens/SettingsScreen";
 import { SkinEditorDialog } from "@/screens/SkinEditorDialog";
 import { SkinsScreen } from "@/screens/SkinsScreen";
 import { cn } from "@/lib/utils";
@@ -356,24 +356,38 @@ function OnboardingDoneBoard() {
   );
 }
 
-function SettingsBoard() {
+const GB = 1024 ** 3;
+
+function SettingsBoard({ initial = "general", steam = "ready" }: { initial?: SettingsTab; steam?: SteamState }) {
+  const [tab, setTab] = useState<SettingsTab>(initial);
   const [settings, setSettings] = useState<Settings>({
-    memoryAuto: true,
-    memoryGb: 4,
-    gameDir: "C:\\Users\\kaysu\\.cloverlauncher\\game",
-    javaArgs: "",
-    betaChannel: false,
-    crashReports: true,
-    discordPresence: true,
     startWithSystem: false,
     keepInTray: true,
+    autoUpdate: true,
+    betaChannel: false,
+    systemNotifications: true,
+    scale: 100,
+    animations: "system",
+    animatedSkin: true,
+    showVotes: true,
+    memoryAuto: true,
+    memoryGb: 4,
+    fullscreen: false,
+    onLaunch: "minimize",
+    javaArgs: "",
+    gameDir: "C:\\Users\\kaysu\\.cloverlauncher\\game",
+    discordPresence: true,
+    crashReports: false,
   });
+  const [steamState, setSteamState] = useState<SteamState>(steam);
   return (
     <Window tab="settings">
       <SettingsScreen
+        tab={tab}
+        onTab={setTab}
         settings={settings}
         onChange={(patch) => setSettings((current) => ({ ...current, ...patch }))}
-        system={{ totalMemoryGb: 16, autoMemoryGb: 4 }}
+        system={{ totalMemoryGb: 16, autoMemoryGb: 4, java: "25.0.1" }}
         accounts={[
           { profile, skin, active: true },
           { profile: { uuid: "2", name: "Kaysuto_Alt" }, skin, active: false },
@@ -381,10 +395,25 @@ function SettingsBoard() {
         onUseAccount={noop}
         onRemoveAccount={noop}
         onAddAccount={noop}
+        onResetRecommended={noop}
+        storage={{
+          parts: [
+            { id: "assets", label: "Ressources du jeu", bytes: 0.46 * GB, color: "#52a96c" },
+            { id: "java", label: "Java", bytes: 0.1 * GB, color: "#d9a441" },
+            { id: "libs", label: "Bibliothèques et Minecraft", bytes: 0.13 * GB, color: "#5aafd6" },
+            { id: "mods", label: "Mods", bytes: 0.03 * GB, color: "#a57bc9" },
+            { id: "worlds", label: "Mondes solo", bytes: 1.2 * GB, color: "#e08a4d" },
+            { id: "shots", label: "Captures d'écran", bytes: 0.35 * GB, color: "#8a8477" },
+          ],
+          reclaimable: 0.18 * GB,
+        }}
         onOpenGameDir={noop}
         onChangeGameDir={noop}
+        onCleanStorage={noop}
+        steam={{ state: steamState, onAdd: () => setSteamState("added"), onRemove: () => setSteamState("ready") }}
         isStaff
         about={{ launcher: "0.1.0", minecraft: "26.2", fabric: "0.19.5" }}
+        onOpenLink={noop}
       />
     </Window>
   );
@@ -405,7 +434,12 @@ const SCREENS: Record<string, { label: string; render: () => ReactNode }> = {
   },
   mods: { label: "Mods — catalogue", render: () => <Mods /> },
   "mods-personal": { label: "Mods — mes mods", render: () => <Mods view="personal" /> },
-  settings: { label: "Paramètres", render: () => <SettingsBoard /> },
+  settings: { label: "Paramètres — générales", render: () => <SettingsBoard /> },
+  "settings-appearance": { label: "Paramètres — apparence", render: () => <SettingsBoard initial="appearance" /> },
+  "settings-game": { label: "Paramètres — jeu", render: () => <SettingsBoard initial="game" /> },
+  "settings-storage": { label: "Paramètres — stockage", render: () => <SettingsBoard initial="storage" /> },
+  "settings-integrations": { label: "Paramètres — intégrations", render: () => <SettingsBoard initial="integrations" /> },
+  "settings-about": { label: "Paramètres — à propos", render: () => <SettingsBoard initial="about" /> },
   skins: { label: "Skins", render: () => <Skins /> },
   "skin-editor": { label: "Skins — modifier", render: () => <Skins editing /> },
   crash: {
