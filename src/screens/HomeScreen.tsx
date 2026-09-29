@@ -1,7 +1,7 @@
 import { ArrowUpRight, Newspaper } from "lucide-react";
 
 import { HeroBackdrop } from "@/components/Backdrop";
-import { ModeHotbar } from "@/components/ModeHotbar";
+import { ModeGrid } from "@/components/ModeGrid";
 import { NewsList } from "@/components/NewsList";
 import { PlayButton } from "@/components/PlayButton";
 import { SkinViewer } from "@/components/SkinViewer";
@@ -39,7 +39,7 @@ export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, vers
 
   return (
     <main className="flex min-h-0 flex-1 flex-col">
-      <section className="relative flex h-[clamp(310px,46vh,440px)] shrink-0 items-end overflow-hidden text-white">
+      <section className="relative flex h-[clamp(290px,42vh,440px)] shrink-0 items-end overflow-hidden text-white">
         <HeroBackdrop />
 
         <div className="relative flex w-full items-end justify-between gap-8 px-12 pb-9">
@@ -88,17 +88,15 @@ export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, vers
         </div>
       </section>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(320px,390px)] gap-10 px-12 pt-5 pb-6">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(340px,420px)] gap-10 px-12 pt-4 pb-5">
         <section aria-labelledby="modes-title" className="flex min-h-0 flex-col gap-4">
           <h2 id="modes-title" className="font-display text-xl">
             Modes de jeu
           </h2>
-          <ModeHotbar modes={modes} destination={destination} />
-          <p className="max-w-[460px] text-xs leading-relaxed text-muted-foreground">
-            «&nbsp;Jouer&nbsp;» te connecte au {destinationName}. Tu choisis ensuite ton mode en jeu, avec la boussole.
-          </p>
+          <ModeGrid modes={modes} destination={destination} />
+          <p className="text-xs leading-snug text-muted-foreground">«&nbsp;Jouer&nbsp;» te connecte au {destinationName}, puis tu choisis ton mode avec la boussole.</p>
 
-          <div className="mt-2 flex max-w-[560px] items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 text-xs">
+          <div className="mt-auto flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 text-xs">
             <span className="shrink-0 text-muted-foreground">
               <span className="font-pixel text-[13px] text-foreground">{enabledMods.length}</span> mod{enabledMods.length > 1 ? "s" : ""} activé{enabledMods.length > 1 ? "s" : ""}
             </span>
