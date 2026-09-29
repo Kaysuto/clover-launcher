@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { PlayerHead } from "@/components/PlayerHead";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { primaryButton, secondaryButton } from "@/lib/buttons";
+import { secondaryButton } from "@/lib/buttons";
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/types";
 
@@ -437,7 +437,8 @@ function About({ about, onOpenLink }: Pick<Props, "about" | "onOpenLink">) {
       </Row>
       <Row title="Aide" hint="Une question, un plantage, une suggestion.">
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => onOpenLink("https://discord.gg/theclovergames")} className={primaryButton}>
+          {/* Bleu Discord, comme sur le site (`DISCORD_BLOCK_CLASSES`). */}
+          <button type="button" onClick={() => onOpenLink("https://discord.gg/theclovergames")} className="mc-bevel flex h-9 items-center justify-center gap-2 whitespace-nowrap bg-[#5865F2] px-4 text-[13px] font-bold text-white">
             <MessageCircle className="size-4" aria-hidden />
             Rejoindre le Discord
           </button>
