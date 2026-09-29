@@ -22,7 +22,7 @@ import { type Account, type Settings, SettingsScreen, type SettingsTab, type Ste
 import { SkinEditorDialog } from "@/screens/SkinEditorDialog";
 import { SkinsScreen } from "@/screens/SkinsScreen";
 import { cn } from "@/lib/utils";
-import type { Cape, DetectedInstance, ImportItem, LauncherNotification, ModInfo, PersonalMod, ModeStatus, NewsItem, PlayState, Profile, SavedSkin, SkinLook, Tab } from "@/types";
+import type { Cape, DetectedInstance, GameVersion, ImportItem, LauncherNotification, ModInfo, PersonalMod, ModeStatus, NewsItem, PlayState, Profile, SavedSkin, SkinLook, Tab } from "@/types";
 
 const icon = (name: string) => new URL(`./placeholder/${name}.png`, import.meta.url).href;
 const skin = new URL("./placeholder/skin.png", import.meta.url).href;
@@ -181,14 +181,33 @@ function Window({ children, tab, notificationsOpen }: { children: ReactNode; tab
   );
 }
 
-function Home({ play, notificationsOpen }: { play: PlayState; notificationsOpen?: boolean }) {
+const versions: GameVersion[] = [
+  { id: "26.2", loader: "Fabric 0.19.5", server: true, joinable: true, installed: true, sizeMb: null, mods: 18 },
+  { id: "26.1.2", loader: "Fabric 0.19.5", server: false, joinable: false, installed: false, sizeMb: 690, mods: 16 },
+  { id: "1.21.11", loader: "Fabric 0.19.5", server: false, joinable: false, installed: true, sizeMb: null, mods: 17 },
+  { id: "1.21.4", loader: "Fabric 0.19.5", server: false, joinable: false, installed: false, sizeMb: 640, mods: 15 },
+  { id: "1.20.1", loader: "Vanilla", server: false, joinable: false, installed: false, sizeMb: 610, mods: 0 },
+];
+
+function Home({ play, notificationsOpen, versionOpen, initialVersion = "26.2" }: { play: PlayState; notificationsOpen?: boolean; versionOpen?: boolean; initialVersion?: string }) {
+  const [selectedVersion, setSelectedVersion] = useState(initialVersion);
   return (
     <Window tab="home" notificationsOpen={notificationsOpen}>
       <HomeScreen
         look={look}
         enabledMods={mods.filter((mod) => mod.enabled && mod.available).map((mod) => mod.name)}
         onManageMods={noop}
-        play={play} onPlay={noop} minecraftVersion="26.2" modes={modes} destination="lobby" news={news} onOpenLink={noop} />
+        play={play}
+        onPlay={noop}
+        versions={versions}
+        selectedVersion={selectedVersion}
+        onSelectVersion={setSelectedVersion}
+        versionOpen={versionOpen}
+        modes={modes}
+        destination="lobby"
+        news={news}
+        onOpenLink={noop}
+      />
     </Window>
   );
 }
@@ -428,6 +447,7 @@ const SCREENS: Record<string, { label: string; render: () => ReactNode }> = {
   "onboarding-done": { label: "Premier lancement 3/3 — terminé", render: () => <OnboardingDoneBoard /> },
   home: { label: "Accueil", render: () => <Home play={{ kind: "ready" }} /> },
   notifications: { label: "Accueil — notifications", render: () => <Home play={{ kind: "ready" }} notificationsOpen /> },
+  versions: { label: "Accueil — choix de la version", render: () => <Home play={{ kind: "ready" }} versionOpen initialVersion="1.21.11" /> },
   installing: {
     label: "Accueil — installation",
     render: () => <Home play={{ kind: "installing", progress: { phase: "assets", done: 1612, total: 3902 } }} />,
@@ -466,7 +486,7 @@ function Board() {
               {screen.label}
             </a>
           </figcaption>
-          <div className="w-fit">{id === "crash" || id === "skin-editor" || id === "notifications" ? <a href={`?screen=${id}`}>Ouvrir l'écran</a> : screen.render()}</div>
+          <div className="w-fit">{id === "crash" || id === "skin-editor" || id === "notifications" || id === "versions" ? <a href={`?screen=${id}`}>Ouvrir l'écran</a> : screen.render()}</div>
         </figure>
       ))}
     </div>

@@ -99,3 +99,18 @@ export type LauncherNotification = {
   createdAt: string;
   read: boolean;
 };
+
+/** Version de Minecraft que le launcher sait lancer (le serveur, ou une autre pour le solo). */
+export type GameVersion = {
+  id: string;
+  loader: string;
+  /** Version que fait tourner le réseau Clover Games (`minecraft.version` du manifeste). */
+  server: boolean;
+  /** Peut se connecter à play.clovergames.fr : seule la version du serveur, sans ViaBackwards. */
+  joinable: boolean;
+  installed: boolean;
+  /** Taille du téléchargement restant, `null` si déjà installée. */
+  sizeMb: number | null;
+  /** Mods du catalogue Clover disponibles pour cette version. */
+  mods: number;
+};

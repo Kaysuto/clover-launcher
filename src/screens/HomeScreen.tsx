@@ -5,8 +5,9 @@ import { ModeHotbar } from "@/components/ModeHotbar";
 import { NewsList } from "@/components/NewsList";
 import { PlayButton } from "@/components/PlayButton";
 import { SkinViewer } from "@/components/SkinViewer";
+import { VersionPicker } from "@/components/VersionPicker";
 import { secondaryButton } from "@/lib/buttons";
-import type { ModeStatus, NewsItem, PlayState, SkinLook } from "@/types";
+import type { GameVersion, ModeStatus, NewsItem, PlayState, SkinLook } from "@/types";
 
 type Props = {
   look: SkinLook;
@@ -15,7 +16,11 @@ type Props = {
   onManageMods: () => void;
   play: PlayState;
   onPlay: () => void;
-  minecraftVersion: string;
+  versions: GameVersion[];
+  selectedVersion: string;
+  onSelectVersion: (id: string) => void;
+  /** Ouvre d'office le choix de version (planche des maquettes). */
+  versionOpen?: boolean;
   modes: ModeStatus[];
   destination: string;
   /** Du plus récent au plus ancien : le premier article passe à la une. */
@@ -25,7 +30,7 @@ type Props = {
 
 const date = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
 
-export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, minecraftVersion, modes, destination, news, onOpenLink }: Props) {
+export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, versions, selectedVersion, onSelectVersion, versionOpen, modes, destination, news, onOpenLink }: Props) {
   const [featured, ...others] = news;
   const online = modes.filter((mode) => mode.players !== null);
   const players = online.reduce((sum, mode) => sum + (mode.players ?? 0), 0);
@@ -60,6 +65,9 @@ export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, mine
             </div>
             <div className="flex flex-col items-center gap-3 pb-1">
               <PlayButton state={play} onPlay={onPlay} />
+              <div className="w-[300px]">
+                <VersionPicker versions={versions} selected={selectedVersion} onSelect={onSelectVersion} defaultOpen={versionOpen} />
+              </div>
               <p className="mc-frame flex h-9 items-center gap-2 bg-card/90 px-3.5 text-xs text-muted-foreground [--mc-radius:6px]">
                 <span className={online.length > 0 ? "size-2 rounded-full bg-primary" : "size-2 rounded-full bg-destructive"} aria-hidden />
                 {online.length > 0 ? (
@@ -71,8 +79,6 @@ export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, mine
                 ) : (
                   <span className="font-semibold text-destructive">Hors ligne</span>
                 )}
-                <span aria-hidden>·</span>
-                Minecraft <span className="font-pixel text-[12px] text-foreground">{minecraftVersion}</span>
               </p>
             </div>
           </div>
