@@ -41,13 +41,14 @@ export function PlayButton({ state, onPlay, version, picker }: Props) {
         {picker}
       </div>
 
-      <p className="relative h-4 text-center text-xs font-semibold text-white [text-shadow:0_1px_3px_rgb(0_0_0/0.7)]" aria-live="polite">
+      <p className="relative min-h-4 text-center text-xs font-semibold text-white [text-shadow:0_1px_3px_rgb(0_0_0/0.7)]" aria-live="polite">
         {state.kind === "installing" && progress && (
           <>
             {PHASES[progress.phase]} · <span className="font-pixel text-[11px]">{number.format(progress.done)}/{number.format(progress.total)}</span>
           </>
         )}
         {state.kind === "running" && "Minecraft est ouvert. Ferme le jeu pour relancer."}
+        {state.kind === "ready" && state.error && <span className="text-[#ffb3b0]">{state.error}</span>}
       </p>
     </div>
   );

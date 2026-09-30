@@ -193,3 +193,11 @@
     transition: transform 300ms ease-out;
   }
 }
+
+/* Réglage « Animations : réduites » : comme prefers-reduced-motion, mais choisi dans le launcher. */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}

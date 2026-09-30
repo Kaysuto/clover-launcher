@@ -1,134 +1,486 @@
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import "./App.css";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type Profile = { uuid: string; name: string };
+import { NotificationBell } from "@/components/NotificationBell";
+import { SideNav } from "@/components/SideNav";
+import { TitleBar } from "@/components/TitleBar";
+import { api, type Catalogue, type ServerStatus, type SkinEntry, type Stored, type StorageUsage, type SystemInfo } from "@/lib/api";
+import { CrashDialog } from "@/screens/Dialogs";
+import { HomeScreen } from "@/screens/HomeScreen";
+import { ModsScreen, type ModsView } from "@/screens/ModsScreen";
+import { OnboardingAccounts, OnboardingDone, type LoginState } from "@/screens/OnboardingScreen";
+import { type Account, type Settings, SettingsScreen, type SettingsTab, type UpcomingSetting } from "@/screens/SettingsScreen";
+import { SkinEditorDialog } from "@/screens/SkinEditorDialog";
+import { SkinsScreen } from "@/screens/SkinsScreen";
+import type { Cape, GameVersion, ModInfo, PlayState, Profile, Progress, SavedSkin, SkinLook, Tab } from "@/types";
 
-type Progress = { phase: "java" | "libraries" | "assets" | "mods"; done: number; total: number };
+/** Étapes du premier lancement tant que l'import depuis les autres launchers n'existe pas (CLO-281). */
+const STEPS = ["Comptes", "Terminé"] as const;
 
-type Game =
-  | { kind: "idle"; error?: string }
-  | { kind: "installing"; progress?: Progress }
-  | { kind: "running" };
+/** Fonctions dont la ligne de réglage reste masquée tant qu'elles ne sont pas branchées. */
+const UPCOMING: UpcomingSetting[] = ["desktopNotifications", "autoUpdate", "recommended", "steam", "changeGameDir"];
 
-const PHASE_LABELS: Record<Progress["phase"], string> = {
-  java: "Installation de Java",
-  libraries: "Téléchargement de Minecraft et Fabric",
-  assets: "Téléchargement des ressources",
-  mods: "Installation des mods",
+const STORAGE_COLORS: Record<string, string> = {
+  assets: "#52a96c",
+  java: "#d9a441",
+  minecraft: "#5aafd6",
+  mods: "#a57bc9",
+  worlds: "#e08a4d",
+  screenshots: "#8a8477",
 };
 
-type State =
-  | { kind: "restoring" }
-  | { kind: "signed-out"; error?: string }
-  | { kind: "signing-in" }
-  | { kind: "signed-in"; profile: Profile };
+const SERVER_POLL_MS = 60_000;
 
-function App() {
-  const [state, setState] = useState<State>({ kind: "restoring" });
-  const [game, setGame] = useState<Game>({ kind: "idle" });
+type Phase = "loading" | "onboarding-accounts" | "onboarding-done" | "signin" | "app";
 
+const toCape = (cape: { id: string; name: string; url: string }): Cape => ({ id: cape.id, name: cape.name, texture: cape.url });
+
+async function readAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+export default function App() {
+  const [phase, setPhase] = useState<Phase>("loading");
+  const [stored, setStored] = useState<Stored | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [login, setLogin] = useState<LoginState>({ kind: "idle" });
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const [tab, setTab] = useState<Tab>("home");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  const [modsView, setModsView] = useState<ModsView>("catalogue");
+
+  const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
+  const [server, setServer] = useState<ServerStatus | null>(null);
+  const [system, setSystem] = useState<SystemInfo | null>(null);
+  const [storage, setStorage] = useState<StorageUsage | null>(null);
+
+  const [play, setPlay] = useState<PlayState>({ kind: "ready" });
+  const [crash, setCrash] = useState<{ code: number | null; log: string } | null>(null);
+
+  const [skins, setSkins] = useState<{ library: SkinEntry[]; defaults: SkinEntry[] }>({ library: [], defaults: [] });
+  const [selectedSkin, setSelectedSkin] = useState<string | null>(null);
+  const [skinStatus, setSkinStatus] = useState<{ kind: "busy" | "error"; message: string } | null>(null);
+  const [editor, setEditor] = useState<{ open: boolean; draft: SkinLook | null; saving: boolean }>({ open: false, draft: null, saving: false });
+
+  const [maximized, setMaximized] = useState(false);
+  const saveTimer = useRef<number | undefined>(undefined);
+
+  const refreshStored = useCallback(async () => setStored(await api.getStored()), []);
+
+  // ── Démarrage : réglages, session du compte actif, puis l'écran qui convient ──
+  useEffect(() => {
+    (async () => {
+      let restored: Profile | null = null;
+      let error: string | null = null;
+      try {
+        restored = await api.restoreSession();
+      } catch (reason) {
+        error = String(reason);
+      }
+      const current = await api.getStored();
+      setStored(current);
+      setProfile(restored);
+      if (!current.onboarded) setPhase("onboarding-accounts");
+      else if (restored) setPhase("app");
+      else {
+        if (error) setLogin({ kind: "error", message: error });
+        setPhase("signin");
+      }
+    })();
+    api.systemInfo().then(setSystem).catch(() => {});
+    api.getCatalogue().then(setCatalogue).catch((reason) => setNotice(String(reason)));
+    api.listSkins().then(setSkins).catch(() => {});
+  }, []);
+
+  // ── Fenêtre sans cadre : état agrandi ──
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    appWindow.isMaximized().then(setMaximized);
+    const unlisten = appWindow.onResized(() => appWindow.isMaximized().then(setMaximized));
+    return () => void unlisten.then((stop) => stop());
+  }, []);
+
+  // ── Installation et fin de partie ──
   useEffect(() => {
     const unlisten = [
-      listen<Progress>("install-progress", ({ payload }) =>
-        setGame({ kind: "installing", progress: payload }),
-      ),
-      listen<number | null>("game-exited", ({ payload }) =>
-        setGame(
-          payload === 0
-            ? { kind: "idle" }
-            : { kind: "idle", error: `Le jeu s'est arrêté avec une erreur (code ${payload ?? "inconnu"}).` },
-        ),
-      ),
+      listen<Progress>("install-progress", ({ payload }) => setPlay({ kind: "installing", progress: payload })),
+      listen<number | null>("game-exited", async ({ payload }) => {
+        setPlay({ kind: "ready" });
+        if (payload !== 0) setCrash({ code: payload, log: await api.gameLogTail().catch(() => "") });
+      }),
     ];
     return () => unlisten.forEach((promise) => promise.then((stop) => stop()));
   }, []);
 
+  // ── Statut du serveur ──
   useEffect(() => {
-    invoke<Profile | null>("restore_session")
-      .then((profile) => setState(profile ? { kind: "signed-in", profile } : { kind: "signed-out" }))
-      .catch((error: string) => setState({ kind: "signed-out", error }));
+    if (!catalogue) return;
+    const ping = () => api.serverStatus(catalogue.server.host).then(setServer);
+    ping();
+    const timer = window.setInterval(ping, SERVER_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [catalogue]);
+
+  // ── Apparence : taille de l'interface et animations ──
+  const settings = stored?.settings;
+  useEffect(() => {
+    if (!settings) return;
+    getCurrentWebview().setZoom(settings.scale / 100).catch(() => {});
+    document.documentElement.classList.toggle("reduce-motion", settings.animations === "reduced");
+  }, [settings?.scale, settings?.animations]);
+
+  useEffect(() => {
+    if (tab === "settings" && settingsTab === "storage") api.storageUsage().then(setStorage).catch(() => {});
+  }, [tab, settingsTab]);
+
+  /** Réglage modifié : appliqué tout de suite, enregistré peu après (le curseur de mémoire bouge vite). */
+  const updateSettings = useCallback((patch: Partial<Settings>) => {
+    setStored((current) => {
+      if (!current) return current;
+      const next = { ...current, settings: { ...current.settings, ...patch } };
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = window.setTimeout(() => api.saveSettings(next.settings).catch((reason) => setNotice(String(reason))), 300);
+      return next;
+    });
   }, []);
 
-  async function login() {
-    setState({ kind: "signing-in" });
+  // ── Comptes ──
+  const addAccount = async () => {
+    setLogin({ kind: "waiting" });
     try {
-      const profile = await invoke<Profile>("login");
-      setState({ kind: "signed-in", profile });
-    } catch (error) {
-      setState({ kind: "signed-out", error: String(error) });
+      const added = await api.login();
+      await refreshStored();
+      setProfile((current) => current ?? added);
+      setLogin({ kind: "idle" });
+    } catch (reason) {
+      setLogin({ kind: "error", message: String(reason) });
     }
+  };
+
+  const useAccount = async (uuid: string) => {
+    try {
+      setProfile(await api.useAccount(uuid));
+      await refreshStored();
+    } catch (reason) {
+      setNotice(String(reason));
+    }
+  };
+
+  const removeAccount = async (uuid: string) => {
+    try {
+      const next = await api.removeAccount(uuid);
+      setProfile(next);
+      await refreshStored();
+      if (!next && phase === "app") setPhase("signin");
+    } catch (reason) {
+      setNotice(String(reason));
+    }
+  };
+
+  const accounts: Account[] = (stored?.accounts ?? []).map((account) => ({
+    profile: { uuid: account.uuid, name: account.name },
+    skin: account.skinUrl,
+    active: account.uuid === stored?.activeAccount,
+  }));
+
+  // ── Jeu ──
+  const startGame = async () => {
+    setPlay({ kind: "installing" });
+    try {
+      await api.play();
+      setPlay({ kind: "running" });
+    } catch (reason) {
+      setPlay({ kind: "ready", error: String(reason) });
+    }
+  };
+
+  const defaultMods = useMemo(() => (catalogue?.mods ?? []).filter((mod) => mod.default && !mod.hidden && mod.available).map((mod) => mod.id), [catalogue]);
+  const enabledIds = settings?.enabledMods ?? defaultMods;
+  const modInfos: ModInfo[] = (catalogue?.mods ?? [])
+    .filter((mod) => !mod.hidden && mod.category)
+    .map((mod) => ({
+      id: mod.id,
+      name: mod.name,
+      description: mod.description ?? "",
+      category: mod.category!,
+      version: mod.version ?? null,
+      available: mod.available,
+      enabled: enabledIds.includes(mod.id),
+    }));
+
+  const toggleMod = (id: string, enabled: boolean) => {
+    const next = enabled ? [...new Set([...enabledIds, id])] : enabledIds.filter((other) => other !== id);
+    updateSettings({ enabledMods: next });
+  };
+
+  const versions: GameVersion[] = catalogue
+    ? [
+        {
+          id: catalogue.minecraft.version,
+          loader: `Fabric ${catalogue.fabric.loader}`,
+          server: true,
+          joinable: true,
+          installed: Boolean(system?.java),
+          sizeMb: null,
+          mods: modInfos.filter((mod) => mod.available).length,
+        },
+      ]
+    : [{ id: "…", loader: "Fabric", server: true, joinable: true, installed: false, sizeMb: null, mods: 0 }];
+
+  // ── Skins ──
+  const activeCape = profile?.capes?.find((cape) => cape.active);
+  const fallbackSkin = skins.defaults.find((skin) => skin.id === "default-steve");
+  const look: SkinLook = {
+    texture: profile?.skin?.url ?? fallbackSkin?.texture ?? "",
+    model: profile?.skin?.model ?? "classic",
+    cape: activeCape ? toCape(activeCape) : null,
+  };
+
+  const applySkin = async (skin: SavedSkin) => {
+    setSelectedSkin(skin.id);
+    setSkinStatus({ kind: "busy", message: `Application de « ${skin.name} » sur ton compte…` });
+    try {
+      setProfile(await api.applySkin(skin.texture, skin.model, activeCape?.id ?? null));
+      await refreshStored();
+      setSkinStatus(null);
+    } catch (reason) {
+      setSelectedSkin(null);
+      setSkinStatus({ kind: "error", message: String(reason) });
+    }
+  };
+
+  const addSkinFile = async (file: File) => {
+    try {
+      await api.addSkin(new Uint8Array(await file.arrayBuffer()), file.name, "classic");
+      setSkins(await api.listSkins());
+      setSkinStatus(null);
+    } catch (reason) {
+      setSkinStatus({ kind: "error", message: String(reason) });
+    }
+  };
+
+  const saveEditor = async () => {
+    if (!editor.draft) return;
+    setEditor((current) => ({ ...current, saving: true }));
+    try {
+      setProfile(await api.applySkin(editor.draft.texture, editor.draft.model, editor.draft.cape?.id ?? null));
+      await refreshStored();
+      setEditor({ open: false, draft: null, saving: false });
+      setSkinStatus(null);
+    } catch (reason) {
+      setEditor((current) => ({ ...current, saving: false }));
+      setSkinStatus({ kind: "error", message: String(reason) });
+    }
+  };
+
+  // ── Rendu ──
+  const appWindow = getCurrentWindow();
+  const chrome = {
+    maximized,
+    onMinimize: () => void appWindow.minimize(),
+    onToggleMaximize: () => void appWindow.toggleMaximize(),
+    onClose: () => void appWindow.close(),
+  };
+  const open = (url: string) => void openUrl(url);
+
+  if (phase === "loading" || !stored || !settings) {
+    return <div className="h-full bg-background" />;
   }
 
-  async function play() {
-    setGame({ kind: "installing" });
-    try {
-      await invoke("play");
-      setGame({ kind: "running" });
-    } catch (error) {
-      setGame({ kind: "idle", error: String(error) });
-    }
+  if (phase !== "app") {
+    const onboarding = phase === "onboarding-accounts" || phase === "onboarding-done";
+    return (
+      <div className="flex h-full flex-col overflow-hidden bg-background">
+        <TitleBar {...chrome} />
+        {phase === "onboarding-done" ? (
+          <OnboardingDone
+            steps={STEPS}
+            accounts={accounts}
+            imports={[]}
+            machine={{
+              summary: system ? `${system.totalMemoryGb} Go de mémoire` : "Configuration détectée au premier lancement",
+              memoryGb: settings.memoryAuto ? (system?.autoMemoryGb ?? 4) : settings.memoryGb,
+            }}
+            crashReports={settings.crashReports}
+            onCrashReports={(crashReports) => updateSettings({ crashReports })}
+            onBack={() => setPhase("onboarding-accounts")}
+            onStart={async () => {
+              await api.finishOnboarding();
+              await refreshStored();
+              setPhase("app");
+            }}
+          />
+        ) : (
+          <OnboardingAccounts
+            standalone={!onboarding}
+            steps={STEPS}
+            accounts={accounts}
+            login={login}
+            onAdd={addAccount}
+            onMakeMain={useAccount}
+            onRemove={removeAccount}
+            onContinue={async () => {
+              if (onboarding) return setPhase("onboarding-done");
+              try {
+                const restored = await api.restoreSession();
+                if (restored) {
+                  setProfile(restored);
+                  setPhase("app");
+                }
+              } catch (reason) {
+                setLogin({ kind: "error", message: String(reason) });
+              }
+            }}
+          />
+        )}
+      </div>
+    );
   }
 
-  async function logout() {
-    await invoke("logout");
-    setState({ kind: "signed-out" });
-  }
+  const activeAccount = stored.accounts.find((account) => account.uuid === stored.activeAccount);
 
   return (
-    <main className="container">
-      <h1>Clover Launcher</h1>
+    <div className="flex h-full flex-col overflow-hidden bg-background">
+      <TitleBar
+        {...chrome}
+        session={
+          profile
+            ? { profile, skin: profile.skin?.url ?? activeAccount?.skinUrl ?? null, tab, onTab: setTab, onAccount: () => (setTab("settings"), setSettingsTab("general")) }
+            : undefined
+        }
+        notifications={<NotificationBell items={[]} onOpen={() => {}} onReadAll={() => {}} />}
+      />
 
-      {state.kind === "restoring" && <p className="muted">Reconnexion…</p>}
-
-      {state.kind === "signed-out" && (
-        <>
-          <button onClick={login}>Se connecter avec Microsoft</button>
-          {state.error && <p className="error">{state.error}</p>}
-        </>
-      )}
-
-      {state.kind === "signing-in" && (
-        <p className="muted">Termine la connexion dans ton navigateur…</p>
-      )}
-
-      {state.kind === "signed-in" && (
-        <>
-          <p>
-            Connecté en tant que <strong>{state.profile.name}</strong>
-          </p>
-          <p className="muted">{state.profile.uuid}</p>
-
-          {game.kind === "idle" && (
-            <>
-              <button onClick={play}>Jouer</button>
-              {game.error && <p className="error">{game.error}</p>}
-            </>
+      <div className="flex min-h-0 flex-1">
+        <SideNav tab={tab} onTab={setTab} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          {tab === "home" && (
+            <HomeScreen
+              look={look}
+              animateSkin={settings.animatedSkin && settings.animations !== "reduced"}
+              enabledMods={modInfos.filter((mod) => mod.enabled && mod.available).map((mod) => mod.name)}
+              onManageMods={() => setTab("mods")}
+              play={play}
+              onPlay={startGame}
+              versions={versions}
+              selectedVersion={versions[0].id}
+              onSelectVersion={() => {}}
+              server={server && { online: server.online, players: server.players }}
+              modes={(catalogue?.modes ?? []).map((mode) => ({ id: mode.id, name: mode.name, icon: mode.image, players: undefined }))}
+              destination="lobby"
+              news={[]}
+              onOpenLink={open}
+            />
           )}
-          {game.kind === "installing" && <InstallProgress progress={game.progress} />}
-          {game.kind === "running" && <p className="muted">Minecraft est lancé.</p>}
 
-          <button className="secondary" onClick={logout} disabled={game.kind !== "idle"}>
-            Se déconnecter
-          </button>
-        </>
+          {tab === "mods" && (
+            <ModsScreen
+              view={modsView}
+              onView={setModsView}
+              mods={modInfos}
+              minecraftVersion={catalogue?.minecraft.version ?? ""}
+              onToggle={toggleMod}
+              onTogglePersonal={() => {}}
+              onUpdatePersonal={() => {}}
+              onRemovePersonal={() => {}}
+              onAddFiles={() => {}}
+            />
+          )}
+
+          {tab === "skins" && profile && (
+            <SkinsScreen
+              playerName={profile.name}
+              look={look}
+              animateSkin={settings.animatedSkin && settings.animations !== "reduced"}
+              saved={skins.library}
+              defaults={skins.defaults}
+              activeId={selectedSkin}
+              onSelect={applySkin}
+              onAddFile={addSkinFile}
+              onEdit={() => setEditor({ open: true, draft: look, saving: false })}
+              status={skinStatus}
+            />
+          )}
+
+          {tab === "settings" && (
+            <SettingsScreen
+              hidden={UPCOMING}
+              tab={settingsTab}
+              onTab={setSettingsTab}
+              settings={settings}
+              onChange={updateSettings}
+              system={{ totalMemoryGb: system?.totalMemoryGb ?? 8, autoMemoryGb: system?.autoMemoryGb ?? 4, java: system?.java ?? null }}
+              accounts={accounts}
+              onUseAccount={useAccount}
+              onRemoveAccount={removeAccount}
+              onAddAccount={addAccount}
+              onResetRecommended={() => {}}
+              storage={{
+                parts: (storage?.parts ?? []).filter((part) => part.bytes > 0).map((part) => ({ ...part, color: STORAGE_COLORS[part.id] ?? "#8a8477" })),
+                reclaimable: storage?.reclaimable ?? 0,
+                gameDir: storage?.gameDir ?? "",
+              }}
+              onOpenGameDir={() => void api.openGameDir()}
+              onChangeGameDir={() => {}}
+              onCleanStorage={async () => {
+                await api.cleanStorage();
+                setStorage(await api.storageUsage());
+              }}
+              steam={{ state: "absent", onAdd: () => {}, onRemove: () => {} }}
+              isStaff={false}
+              about={{ launcher: system?.launcher ?? "", minecraft: catalogue?.minecraft.version ?? "", fabric: catalogue?.fabric.loader ?? "" }}
+              onOpenLink={open}
+            />
+          )}
+        </div>
+      </div>
+
+      {editor.draft && (
+        <SkinEditorDialog
+          open={editor.open}
+          draft={editor.draft}
+          capes={(profile?.capes ?? []).map(toCape)}
+          saving={editor.saving}
+          onChange={(draft) => setEditor((current) => ({ ...current, draft }))}
+          onReplaceTexture={async (file) => {
+            const texture = await readAsDataUrl(file);
+            setEditor((current) => (current.draft ? { ...current, draft: { ...current.draft, texture } } : current));
+          }}
+          onSave={saveEditor}
+          onOpenChange={(openEditor) => setEditor((current) => ({ ...current, open: openEditor }))}
+        />
       )}
-    </main>
-  );
-}
 
-function InstallProgress({ progress }: { progress?: Progress }) {
-  if (!progress) return <p className="muted">Préparation…</p>;
-  const percent = progress.total === 0 ? 100 : Math.floor((progress.done / progress.total) * 100);
-  return (
-    <div className="progress">
-      <p className="muted">
-        {PHASE_LABELS[progress.phase]} — {progress.done} / {progress.total}
-      </p>
-      <progress max={100} value={percent} />
+      <CrashDialog
+        open={crash !== null}
+        exitCode={crash?.code ?? null}
+        logTail={crash?.log ?? ""}
+        onCopyLog={() => void navigator.clipboard.writeText(crash?.log ?? "")}
+        onOpenLogs={() => void api.openLogsDir()}
+        onRelaunch={() => {
+          setCrash(null);
+          startGame();
+        }}
+        onOpenChange={(openDialog) => !openDialog && setCrash(null)}
+      />
+
+      {notice && (
+        <div role="alert" className="mc-frame fixed right-4 bottom-4 z-50 flex max-w-[420px] items-start gap-3 bg-card px-4 py-3 text-[13px] shadow-[0_12px_32px_rgb(0_0_0/0.5)]">
+          <p className="flex-1 leading-snug">{notice}</p>
+          <button type="button" onClick={() => setNotice(null)} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
+            Fermer
+          </button>
+        </div>
+      )}
     </div>
   );
 }
-
-export default App;

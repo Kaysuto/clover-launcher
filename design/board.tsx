@@ -203,6 +203,7 @@ function Home({ play, notificationsOpen, versionOpen, initialVersion = "26.2" }:
         selectedVersion={selectedVersion}
         onSelectVersion={setSelectedVersion}
         versionOpen={versionOpen}
+        server={{ online: true, players: 271 }}
         modes={modes}
         destination="lobby"
         news={news}
@@ -394,7 +395,6 @@ function SettingsBoard({ initial = "general", steam = "ready" }: { initial?: Set
     fullscreen: false,
     onLaunch: "minimize",
     javaArgs: "",
-    gameDir: "C:\\Users\\kaysu\\.cloverlauncher\\game",
     discordPresence: true,
     crashReports: false,
   });
@@ -425,6 +425,7 @@ function SettingsBoard({ initial = "general", steam = "ready" }: { initial?: Set
             { id: "shots", label: "Captures d'écran", bytes: 0.35 * GB, color: "#8a8477" },
           ],
           reclaimable: 0.18 * GB,
+          gameDir: "C:\\Users\\kaysu\\.cloverlauncher\\game",
         }}
         onOpenGameDir={noop}
         onChangeGameDir={noop}

@@ -12,8 +12,8 @@ import type { DetectedInstance, ImportItem } from "@/types";
 /** Connexion : un échec s'affiche sous le bouton Microsoft. */
 export type LoginState = { kind: "idle" } | { kind: "waiting" } | { kind: "error"; message: string };
 
-/** Premier lancement : trois étapes, dans cet ordre. */
-const STEPS = ["Comptes", "Importer", "Terminé"] as const;
+/** Premier lancement : trois étapes, dans cet ordre. L'import n'apparaît qu'une fois disponible (CLO-281). */
+export const ALL_STEPS = ["Comptes", "Importer", "Terminé"] as const;
 
 const number = new Intl.NumberFormat("fr-FR");
 
@@ -32,14 +32,14 @@ function MicrosoftLogo() {
  * Cadre commun des étapes : fond du site, suivi des étapes, contenu, actions. Sans `step`, le suivi
  * est masqué (écran de connexion seul, quand plus aucun compte n'est enregistré).
  */
-export function OnboardingShell({ step, children, footer }: { step?: number; children: ReactNode; footer: ReactNode }) {
+export function OnboardingShell({ step, steps = ALL_STEPS, children, footer }: { step?: number; steps?: readonly string[]; children: ReactNode; footer: ReactNode }) {
   return (
     <main className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-6 py-4">
       <HeroBackdrop />
       <div className="mc-frame relative flex max-h-full w-full max-w-[920px] flex-col bg-card shadow-[0_24px_60px_rgb(0_0_0/0.45)]">
         {step !== undefined && (
         <ol aria-label="Étapes" className="flex items-center gap-3 border-b border-border px-6 py-3">
-          {STEPS.map((label, index) => {
+          {steps.map((label, index) => {
             const done = index < step;
             const current = index === step;
             return (
@@ -55,7 +55,7 @@ export function OnboardingShell({ step, children, footer }: { step?: number; chi
                   {done ? <Check className="size-4" strokeWidth={3} aria-hidden /> : index + 1}
                 </span>
                 <span className={cn("text-sm font-semibold", current ? "text-foreground" : "text-muted-foreground")}>{label}</span>
-                {index < STEPS.length - 1 && <span aria-hidden className={cn("h-0.5 flex-1 rounded-full", done ? "bg-primary" : "bg-border")} />}
+                {index < steps.length - 1 && <span aria-hidden className={cn("h-0.5 flex-1 rounded-full", done ? "bg-primary" : "bg-border")} />}
               </li>
             );
           })}
@@ -76,6 +76,7 @@ type AccountsProps = {
    * que la session a expiré. Pas de suivi d'étapes, « Continuer » ramène à l'accueil.
    */
   standalone?: boolean;
+  steps?: readonly string[];
   accounts: Account[];
   login: LoginState;
   onAdd: () => void;
@@ -84,11 +85,12 @@ type AccountsProps = {
   onContinue: () => void;
 };
 
-export function OnboardingAccounts({ standalone = false, accounts, login, onAdd, onMakeMain, onRemove, onContinue }: AccountsProps) {
+export function OnboardingAccounts({ standalone = false, steps, accounts, login, onAdd, onMakeMain, onRemove, onContinue }: AccountsProps) {
   const empty = accounts.length === 0;
   return (
     <OnboardingShell
       step={standalone ? undefined : 0}
+      steps={steps}
       footer={
         <>
           <p className="text-xs text-muted-foreground">Tu pourras en ajouter ou en retirer plus tard dans les paramètres.</p>
@@ -368,8 +370,9 @@ type DoneProps = {
   accounts: Account[];
   /** Une ligne par installation importée : « Prism Launcher · PvP 1.21 : réglages, 5 packs… ». */
   imports: string[];
-  /** Profil de la machine et réglages recommandés (CLO-280). */
-  machine: { summary: string; preset: string; memoryGb: number };
+  /** Profil de la machine ; `preset` : réglages recommandés, une fois disponibles (CLO-280). */
+  machine: { summary: string; preset?: string; memoryGb: number };
+  steps?: readonly string[];
   crashReports: boolean;
   onCrashReports: (value: boolean) => void;
   onBack: () => void;
@@ -388,11 +391,12 @@ function SummaryRow({ icon, title, children }: { icon: ReactNode; title: string;
   );
 }
 
-export function OnboardingDone({ accounts, imports, machine, crashReports, onCrashReports, onBack, onStart }: DoneProps) {
+export function OnboardingDone({ steps = ALL_STEPS, accounts, imports, machine, crashReports, onCrashReports, onBack, onStart }: DoneProps) {
   const main = accounts.find((account) => account.active) ?? accounts[0];
   return (
     <OnboardingShell
-      step={2}
+      step={steps.length - 1}
+      steps={steps}
       footer={
         <>
           <button type="button" onClick={onBack} className={secondaryButton}>
@@ -414,7 +418,7 @@ export function OnboardingDone({ accounts, imports, machine, crashReports, onCra
           <SummaryRow icon={<FolderInput className="size-[18px]" aria-hidden />} title="Importé">
             {imports.length > 0 ? imports.map((line) => <p key={line}>{line}</p>) : "Rien, tu pars de zéro."}
           </SummaryRow>
-          <SummaryRow icon={<Cpu className="size-[18px]" aria-hidden />} title={`Réglages recommandés : ${machine.preset}`}>
+          <SummaryRow icon={<Cpu className="size-[18px]" aria-hidden />} title={machine.preset ? `Réglages recommandés : ${machine.preset}` : "Ton ordinateur"}>
             {machine.summary}. <span className="font-pixel text-[12px] text-foreground">{machine.memoryGb}</span> Go de mémoire pour le jeu. Modifiable dans les paramètres.
           </SummaryRow>
         </ul>

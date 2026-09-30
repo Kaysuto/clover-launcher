@@ -28,7 +28,7 @@ export function ModeGrid({ modes, destination }: { modes: ModeStatus[]; destinat
             </span>
             <span className="flex min-w-0 flex-col gap-0.5">
               <span className="truncate text-[13px] leading-tight font-bold">{mode.name}</span>
-              {offline ? (
+              {mode.players === undefined ? null : offline ? (
                 <span className="flex items-center gap-1.5 text-[11px] text-destructive">
                   <span aria-hidden className="size-1.5 rounded-full bg-destructive" />
                   Hors ligne

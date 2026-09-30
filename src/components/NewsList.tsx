@@ -19,7 +19,7 @@ export function NewsList({ items, onOpen }: { items: NewsItem[]; onOpen: (url: s
       </div>
 
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Pas d'autre actualité pour le moment.</p>
+        <p className="text-sm text-muted-foreground">Aucune actualité à afficher pour le moment.</p>
       ) : (
         <ul className="-mr-2 flex min-h-0 flex-col gap-2 overflow-y-auto pr-2">
           {items.map((item) => (

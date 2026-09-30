@@ -7,11 +7,11 @@ import type { SkinLook } from "@/types";
  * Aperçu 3D du skin. On le fait seulement tourner sur lui-même, à la souris : ni inclinaison, ni
  * zoom, ni déplacement. Immobile si le système demande moins d'animations.
  */
-export function SkinViewer({ look, width, height }: { look: SkinLook; width: number; height: number }) {
+export function SkinViewer({ look, width, height, animate = true }: { look: SkinLook; width: number; height: number; animate?: boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    if (!canvas.current) return;
+    if (!canvas.current || !look.texture) return;
     const viewer = new Viewer({
       canvas: canvas.current,
       width,
@@ -27,11 +27,13 @@ export function SkinViewer({ look, width, height }: { look: SkinLook; width: num
     viewer.controls.minPolarAngle = Math.PI / 2;
     viewer.controls.maxPolarAngle = Math.PI / 2;
     viewer.playerObject.rotation.y = -0.45;
-    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (animate && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       viewer.animation = new IdleAnimation();
     }
     return () => viewer.dispose();
-  }, [look.texture, look.model, look.cape?.texture, width, height]);
+  }, [look.texture, look.model, look.cape?.texture, width, height, animate]);
 
+  // Skin encore inconnu (profil pas chargé) : place réservée, sans aperçu.
+  if (!look.texture) return <div aria-hidden style={{ width, height }} />;
   return <canvas ref={canvas} aria-label="Aperçu 3D de ton skin" className="cursor-grab active:cursor-grabbing" />;
 }

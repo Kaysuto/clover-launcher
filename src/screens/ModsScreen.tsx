@@ -18,7 +18,8 @@ type Props = {
   view: ModsView;
   onView: (view: ModsView) => void;
   mods: ModInfo[];
-  personal: PersonalMod[];
+  /** Absent tant que les mods personnels ne sont pas branchés : l'onglet est masqué. */
+  personal?: PersonalMod[];
   minecraftVersion: string;
   onToggle: (id: string, enabled: boolean) => void;
   onTogglePersonal: (id: string, enabled: boolean) => void;
@@ -33,7 +34,7 @@ const usable = (mod: PersonalMod) => mod.status.kind === "ok";
 export function ModsScreen(props: Props) {
   const { view, mods, personal } = props;
   const catalogueOn = mods.filter((mod) => mod.enabled && mod.available).length;
-  const personalOn = personal.filter((mod) => mod.enabled && usable(mod)).length;
+  const personalOn = (personal ?? []).filter((mod) => mod.enabled && usable(mod)).length;
 
   return (
     <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-12 pt-8 pb-10">
@@ -42,6 +43,7 @@ export function ModsScreen(props: Props) {
         <p className="text-sm text-muted-foreground">Ils s'appliquent au prochain lancement.</p>
       </header>
 
+      {personal && (
       <div role="tablist" aria-label="Mods" className="mt-5 flex gap-1 self-start rounded-lg border border-border bg-[#100e0b] p-1">
         {(
           [
@@ -65,8 +67,9 @@ export function ModsScreen(props: Props) {
           </button>
         ))}
       </div>
+      )}
 
-      {view === "catalogue" ? <Catalogue {...props} /> : <Personal {...props} />}
+      {view === "catalogue" || !personal ? <Catalogue {...props} /> : <Personal {...props} personal={personal} />}
     </main>
   );
 }
@@ -128,7 +131,7 @@ function statusText(mod: PersonalMod, minecraftVersion: string) {
   }
 }
 
-function Personal({ personal, minecraftVersion, onTogglePersonal, onUpdatePersonal, onRemovePersonal, onAddFiles }: Props) {
+function Personal({ personal, minecraftVersion, onTogglePersonal, onUpdatePersonal, onRemovePersonal, onAddFiles }: Props & { personal: PersonalMod[] }) {
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const blocked = personal.filter((mod) => !usable(mod)).length;

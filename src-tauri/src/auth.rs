@@ -24,8 +24,13 @@ const TOKEN_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0
 const SCOPE: &str = "XboxLive.signin offline_access";
 
 const KEYRING_SERVICE: &str = "fr.clovergames.launcher";
-const REFRESH_TOKEN_ACCOUNT: &str = "microsoft-refresh-token";
-const SESSION_ACCOUNT: &str = "minecraft-session";
+/// Entrées du coffre, une paire par compte : `refresh:<uuid>` et `session:<uuid>`.
+const REFRESH_PREFIX: &str = "refresh:";
+const SESSION_PREFIX: &str = "session:";
+/// Entrées de la toute première version (un seul compte), migrées au premier démarrage.
+const LEGACY_REFRESH: &str = "microsoft-refresh-token";
+const LEGACY_SESSION: &str = "minecraft-session";
+const PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profile";
 
 /// Marge avant expiration du jeton Minecraft (valable 24 h) sous laquelle on le renouvelle.
 const SESSION_MARGIN_SECS: u64 = 3600;
@@ -74,6 +79,27 @@ pub struct Profile {
     /// UUID avec tirets, comme partout ailleurs chez Clover.
     pub uuid: String,
     pub name: String,
+    /// Skin porté (absent : skin par défaut de Mojang).
+    #[serde(default)]
+    pub skin: Option<SkinInfo>,
+    /// Capes possédées par le compte.
+    #[serde(default)]
+    pub capes: Vec<CapeInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkinInfo {
+    pub url: String,
+    /// `classic` ou `slim`, comme dans l'interface.
+    pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapeInfo {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub active: bool,
 }
 
 /// Gardée dans le coffre du système jusqu'à son expiration : `login_with_xbox` limite
@@ -138,15 +164,23 @@ pub async fn login(app: &AppHandle) -> Result<Session> {
     open_session(tokens).await
 }
 
-/// Rouvre la session du dernier compte : jeton Minecraft encore valable, sinon renouvellement à
-/// partir du refresh token Microsoft rangé dans le coffre du système.
-pub async fn restore() -> Result<Option<Session>> {
-    if let Some(session) = cached_session()? {
+/// Rouvre la session d'un compte : jeton Minecraft encore valable, sinon renouvellement à partir
+/// du refresh token Microsoft rangé dans le coffre du système.
+pub async fn restore(uuid: &str) -> Result<Option<Session>> {
+    if let Some(session) = cached_session(uuid)? {
         if session.is_fresh() {
+            // Skin et capes ne sont pas dans le coffre (limite de taille) : on relit le profil, appel
+            // léger qui ne passe pas par `login_with_xbox`. Hors ligne, la session reste utilisable.
+            if session.profile.skin.is_none() && session.profile.capes.is_empty() {
+                match refresh_profile(&session).await {
+                    Ok(updated) => return Ok(Some(updated)),
+                    Err(error) => eprintln!("[auth] profil non relu : {error}"),
+                }
+            }
             return Ok(Some(session));
         }
     }
-    let refresh_token = match keyring_entry(REFRESH_TOKEN_ACCOUNT)?.get_password() {
+    let refresh_token = match keyring_entry(&format!("{REFRESH_PREFIX}{uuid}"))?.get_password() {
         Ok(token) => token,
         Err(keyring::Error::NoEntry) => return Ok(None),
         Err(e) => return Err(e.into()),
@@ -161,13 +195,59 @@ pub async fn restore() -> Result<Option<Session>> {
     open_session(tokens).await.map(Some)
 }
 
-pub fn logout() -> Result<()> {
-    for account in [SESSION_ACCOUNT, REFRESH_TOKEN_ACCOUNT] {
-        match keyring_entry(account)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => {}
-            Err(e) => return Err(e.into()),
-        }
+/// Retire un compte du coffre du système.
+pub fn logout(uuid: &str) -> Result<()> {
+    for account in [format!("{SESSION_PREFIX}{uuid}"), format!("{REFRESH_PREFIX}{uuid}")] {
+        delete_entry(&account)?;
     }
+    Ok(())
+}
+
+/// Première version du launcher : un seul compte, rangé sous des clés fixes. Déplacé sous les clés
+/// du compte, puis les anciennes entrées sont effacées.
+pub fn migrate_legacy() -> Result<Option<Session>> {
+    let session = match keyring_entry(LEGACY_SESSION)?.get_password() {
+        Ok(json) => serde_json::from_str::<Session>(&json).ok(),
+        Err(keyring::Error::NoEntry) => None,
+        Err(e) => return Err(e.into()),
+    };
+    let Some(session) = session else { return Ok(None) };
+    if let Ok(refresh) = keyring_entry(LEGACY_REFRESH)?.get_password() {
+        keyring_entry(&format!("{REFRESH_PREFIX}{}", session.profile.uuid))?.set_password(&refresh)?;
+    }
+    store_session(&session)?;
+    delete_entry(LEGACY_SESSION)?;
+    delete_entry(LEGACY_REFRESH)?;
+    Ok(Some(session))
+}
+
+async fn refresh_profile(session: &Session) -> Result<Session> {
+    let response = reqwest::Client::new().get(PROFILE_URL).bearer_auth(&session.minecraft_token).send().await?;
+    update_profile(session, &checked(response, "profil Minecraft").await?)
+}
+
+/// Met à jour la session en cache à partir d'une réponse de profil déjà obtenue.
+pub fn update_profile(session: &Session, profile: &Value) -> Result<Session> {
+    let updated = Session { profile: parse_profile(profile)?, ..session.clone() };
+    store_session(&updated)?;
+    Ok(updated)
+}
+
+fn delete_entry(account: &str) -> Result<()> {
+    match keyring_entry(account)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Le coffre de Windows limite une entrée à 2 560 octets : on n'y range que le jeton et l'identité,
+/// sans skin ni capes (relus à la reprise de session par `refresh_profile`).
+fn store_session(session: &Session) -> Result<()> {
+    let mut stripped = session.clone();
+    stripped.profile.skin = None;
+    stripped.profile.capes.clear();
+    let json = serde_json::to_string(&stripped).expect("session sérialisable");
+    keyring_entry(&format!("{SESSION_PREFIX}{}", session.profile.uuid))?.set_password(&json)?;
     Ok(())
 }
 
@@ -176,8 +256,8 @@ fn keyring_entry(account: &str) -> Result<keyring::Entry> {
 }
 
 /// Une session illisible (format d'une ancienne version) est ignorée, pas bloquante.
-fn cached_session() -> Result<Option<Session>> {
-    match keyring_entry(SESSION_ACCOUNT)?.get_password() {
+fn cached_session(uuid: &str) -> Result<Option<Session>> {
+    match keyring_entry(&format!("{SESSION_PREFIX}{uuid}"))?.get_password() {
         Ok(json) => Ok(serde_json::from_str(&json).ok()),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(e.into()),
@@ -185,11 +265,10 @@ fn cached_session() -> Result<Option<Session>> {
 }
 
 async fn open_session(tokens: MicrosoftTokens) -> Result<Session> {
-    // Microsoft fait tourner le refresh token à chaque usage : toujours ranger le dernier.
-    keyring_entry(REFRESH_TOKEN_ACCOUNT)?.set_password(&tokens.refresh_token)?;
     let session = minecraft_session(&tokens.access_token).await?;
-    let json = serde_json::to_string(&session).expect("session sérialisable");
-    keyring_entry(SESSION_ACCOUNT)?.set_password(&json)?;
+    // Microsoft fait tourner le refresh token à chaque usage : toujours ranger le dernier.
+    keyring_entry(&format!("{REFRESH_PREFIX}{}", session.profile.uuid))?.set_password(&tokens.refresh_token)?;
+    store_session(&session)?;
     Ok(session)
 }
 
@@ -318,22 +397,44 @@ async fn minecraft_session(microsoft_token: &str) -> Result<Session> {
 
     // Étape 4 : profil. 404 = le compte ne possède pas le jeu.
     let profile = http
-        .get("https://api.minecraftservices.com/minecraft/profile")
+        .get(PROFILE_URL)
         .bearer_auth(&minecraft_token)
         .send()
         .await?;
     if profile.status() == reqwest::StatusCode::NOT_FOUND {
         return Err(AuthError::NoMinecraft);
     }
-    let profile = checked(profile, "profil Minecraft").await?;
-    let id = string_at(&profile, "/id", "profil Minecraft")?;
-    let name = string_at(&profile, "/name", "profil Minecraft")?;
+    let profile = parse_profile(&checked(profile, "profil Minecraft").await?)?;
+    Ok(Session { profile, minecraft_token, expires_at })
+}
 
-    Ok(Session {
-        profile: Profile { uuid: hyphenate(&id), name },
-        minecraft_token,
-        expires_at,
-    })
+/// Réponse de `minecraft/profile` → profil de l'interface. Mojang écrit les modèles `CLASSIC` et
+/// `SLIM` et sert parfois les textures en http.
+fn parse_profile(value: &Value) -> Result<Profile> {
+    let id = string_at(value, "/id", "profil Minecraft")?;
+    let name = string_at(value, "/name", "profil Minecraft")?;
+    let https = |url: &str| url.replacen("http://", "https://", 1);
+    let skin = value["skins"].as_array().and_then(|skins| {
+        skins.iter().find(|skin| skin["state"] == "ACTIVE").map(|skin| SkinInfo {
+            url: https(skin["url"].as_str().unwrap_or_default()),
+            model: if skin["variant"].as_str().is_some_and(|v| v.eq_ignore_ascii_case("slim")) { "slim" } else { "classic" }.into(),
+        })
+    });
+    let capes = value["capes"]
+        .as_array()
+        .map(|capes| {
+            capes
+                .iter()
+                .map(|cape| CapeInfo {
+                    id: cape["id"].as_str().unwrap_or_default().into(),
+                    name: cape["alias"].as_str().unwrap_or("Cape").into(),
+                    url: https(cape["url"].as_str().unwrap_or_default()),
+                    active: cape["state"] == "ACTIVE",
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(Profile { uuid: hyphenate(&id), name, skin, capes })
 }
 
 async fn checked(response: reqwest::Response, step: &'static str) -> Result<Value> {
@@ -388,6 +489,22 @@ mod tests {
             hyphenate("069a79f444e94726a5befca90e38aaf5"),
             "069a79f4-44e9-4726-a5be-fca90e38aaf5"
         );
+    }
+
+    #[test]
+    fn parses_skin_and_capes() {
+        let profile = parse_profile(&json!({
+            "id": "069a79f444e94726a5befca90e38aaf5", "name": "Kaysuto",
+            "skins": [{"state": "ACTIVE", "url": "http://textures.minecraft.net/texture/abc", "variant": "SLIM"}],
+            "capes": [{"id": "c1", "state": "ACTIVE", "url": "http://textures.minecraft.net/texture/def", "alias": "Migrator"},
+                      {"id": "c2", "state": "INACTIVE", "url": "http://textures.minecraft.net/texture/ghi", "alias": "Vanilla"}]
+        }))
+        .unwrap();
+        let skin = profile.skin.unwrap();
+        assert_eq!(skin.model, "slim");
+        assert!(skin.url.starts_with("https://"));
+        assert_eq!(profile.capes.len(), 2);
+        assert!(profile.capes[0].active && !profile.capes[1].active);
     }
 
     #[test]

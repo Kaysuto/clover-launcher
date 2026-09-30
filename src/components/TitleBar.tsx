@@ -8,7 +8,7 @@ import type { Profile, Tab } from "@/types";
 
 type Props = {
   /** Absent avant la connexion : ni compte ni paramètres. La navigation vit dans `SideNav`. */
-  session?: { profile: Profile; skin: string; tab: Tab; onTab: (tab: Tab) => void; onAccount: () => void };
+  session?: { profile: Profile; skin: string | null; tab: Tab; onTab: (tab: Tab) => void; onAccount: () => void };
   /** Affiché à gauche du compte (derniers votes). */
   activity?: ReactNode;
   /** Cloche des notifications, à gauche des paramètres. */

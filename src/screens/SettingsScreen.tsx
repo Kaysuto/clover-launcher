@@ -34,14 +34,17 @@ export type Settings = {
   /** Ce que devient le launcher quand Minecraft démarre. */
   onLaunch: "keep" | "minimize" | "quit";
   javaArgs: string;
-  // Stockage
-  gameDir: string;
   // Intégrations
   discordPresence: boolean;
   crashReports: boolean;
+  /** Mods du catalogue choisis ; `null` = mods activés par défaut. */
+  enabledMods?: string[] | null;
 };
 
-export type Account = { profile: Profile; skin: string; active: boolean };
+/** Réglages dont la fonction n'est pas encore branchée : leur ligne est masquée. */
+export type UpcomingSetting = "desktopNotifications" | "autoUpdate" | "recommended" | "steam" | "changeGameDir";
+
+export type Account = { profile: Profile; skin: string | null; active: boolean };
 
 /** Une part du dossier du jeu, en octets. */
 export type StoragePart = { id: string; label: string; bytes: number; color: string };
@@ -50,18 +53,19 @@ export type StoragePart = { id: string; label: string; bytes: number; color: str
 export type SteamState = "absent" | "running" | "ready" | "added";
 
 type Props = {
+  hidden?: UpcomingSetting[];
   tab: SettingsTab;
   onTab: (tab: SettingsTab) => void;
   settings: Settings;
   onChange: (patch: Partial<Settings>) => void;
   /** Mémoire totale du poste et valeur automatique, en Go. */
-  system: { totalMemoryGb: number; autoMemoryGb: number; java: string };
+  system: { totalMemoryGb: number; autoMemoryGb: number; java: string | null };
   accounts: Account[];
   onUseAccount: (uuid: string) => void;
   onRemoveAccount: (uuid: string) => void;
   onAddAccount: () => void;
   onResetRecommended: () => void;
-  storage: { parts: StoragePart[]; reclaimable: number };
+  storage: { parts: StoragePart[]; reclaimable: number; gameDir: string };
   onOpenGameDir: () => void;
   onChangeGameDir: () => void;
   onCleanStorage: () => void;
@@ -174,7 +178,7 @@ export function SettingsScreen(props: Props) {
   );
 }
 
-function General({ settings, onChange, accounts, onUseAccount, onRemoveAccount, onAddAccount, isStaff }: Props) {
+function General({ settings, onChange, accounts, onUseAccount, onRemoveAccount, onAddAccount, isStaff, hidden = [] }: Props) {
   return (
     <>
       <Row title="Comptes" hint="Chaque compte Microsoft doit posséder Minecraft: Java Edition.">
@@ -211,16 +215,22 @@ function General({ settings, onChange, accounts, onUseAccount, onRemoveAccount, 
         </Toggle>
       </Row>
 
+      {!hidden.includes("desktopNotifications") && (
       <Row title="Notifications" hint="Achats, niveau gagné, succès, annonces.">
         <Toggle id="system-notifications" checked={settings.systemNotifications} onChange={(systemNotifications) => onChange({ systemNotifications })} hint="Une bulle du système apparaît quand la fenêtre est fermée ou réduite.">
           Afficher les notifications sur le bureau
         </Toggle>
       </Row>
+      )}
 
       <Row title="Mises à jour" hint="Le launcher, Minecraft, Fabric et les mods suivent le serveur.">
+        {hidden.includes("autoUpdate") ? (
+          <p className="text-sm text-muted-foreground">Minecraft, Fabric et les mods se mettent à jour à chaque lancement.</p>
+        ) : (
         <Toggle id="auto-update" checked={settings.autoUpdate} onChange={(autoUpdate) => onChange({ autoUpdate })} hint="Téléchargées en arrière-plan, installées au prochain démarrage.">
           Mettre à jour le launcher automatiquement
         </Toggle>
+        )}
         {isStaff && (
           <Toggle id="beta" checked={settings.betaChannel} onChange={(betaChannel) => onChange({ betaChannel })} hint="Reçoit les versions de test avant les joueurs.">
             Canal bêta
@@ -272,7 +282,7 @@ function Appearance({ settings, onChange }: Pick<Props, "settings" | "onChange">
   );
 }
 
-function Game({ settings, onChange, system, onResetRecommended }: Props) {
+function Game({ settings, onChange, system, onResetRecommended, hidden = [] }: Props) {
   const memory = settings.memoryAuto ? system.autoMemoryGb : settings.memoryGb;
   return (
     <>
@@ -311,6 +321,7 @@ function Game({ settings, onChange, system, onResetRecommended }: Props) {
         </Toggle>
       </Row>
 
+      {!hidden.includes("recommended") && (
       <Row title="Réglages recommandés" hint="Distance d'affichage, graphismes et mods de performance choisis pour ta machine.">
         <button type="button" onClick={onResetRecommended} className={`${secondaryButton} self-start`}>
           <RotateCcw className="size-4" aria-hidden />
@@ -318,10 +329,17 @@ function Game({ settings, onChange, system, onResetRecommended }: Props) {
         </button>
         <p className="text-xs text-muted-foreground">Tes réglages actuels sont remplacés. Ton skin, tes serveurs et tes mondes ne changent pas.</p>
       </Row>
+      )}
 
       <Row title="Avancé" hint="À ne modifier que si l'équipe te le demande.">
         <p className="text-sm text-muted-foreground">
-          Java <span className="font-pixel text-[12px] text-foreground">{system.java}</span>, installé et mis à jour par le launcher.
+          {system.java ? (
+            <>
+              Java <span className="font-pixel text-[12px] text-foreground">{system.java}</span>, installé et mis à jour par le launcher.
+            </>
+          ) : (
+            "Java sera installé par le launcher au premier lancement du jeu."
+          )}
         </p>
         <label className="flex flex-col gap-2 text-xs font-semibold text-muted-foreground">
           Arguments Java
@@ -338,7 +356,7 @@ function Game({ settings, onChange, system, onResetRecommended }: Props) {
   );
 }
 
-function Storage({ settings, storage, onOpenGameDir, onChangeGameDir, onCleanStorage }: Props) {
+function Storage({ storage, onOpenGameDir, onChangeGameDir, onCleanStorage, hidden = [] }: Props) {
   const total = storage.parts.reduce((sum, part) => sum + part.bytes, 0);
   return (
     <>
@@ -368,17 +386,21 @@ function Storage({ settings, storage, onOpenGameDir, onChangeGameDir, onCleanSto
       </Row>
 
       <Row title="Dossier du jeu" hint="Mondes, captures d'écran, options et journaux. Séparé de ton dossier .minecraft.">
-        <p className="truncate rounded-md border border-border bg-[#100e0b] px-3 py-2 font-mono text-xs select-text">{settings.gameDir}</p>
+        <p className="truncate rounded-md border border-border bg-[#100e0b] px-3 py-2 font-mono text-xs select-text">{storage.gameDir}</p>
         <div className="flex gap-2">
           <button type="button" onClick={onOpenGameDir} className={secondaryButton}>
             <FolderOpen className="size-4" aria-hidden />
             Ouvrir le dossier
           </button>
-          <button type="button" onClick={onChangeGameDir} className={secondaryButton}>
-            Changer…
-          </button>
+          {!hidden.includes("changeGameDir") && (
+            <button type="button" onClick={onChangeGameDir} className={secondaryButton}>
+              Changer…
+            </button>
+          )}
         </div>
-        <p className="text-xs text-muted-foreground">Changer de dossier déplace les fichiers : l'opération peut durer plusieurs minutes.</p>
+        {!hidden.includes("changeGameDir") && (
+          <p className="text-xs text-muted-foreground">Changer de dossier déplace les fichiers : l'opération peut durer plusieurs minutes.</p>
+        )}
       </Row>
     </>
   );
@@ -391,7 +413,7 @@ const STEAM_TEXT: Record<SteamState, string> = {
   added: "Ajouté. Redémarre Steam pour le voir dans ta bibliothèque.",
 };
 
-function Integrations({ settings, onChange, steam }: Props) {
+function Integrations({ settings, onChange, steam, hidden = [] }: Props) {
   return (
     <>
       <Row title="Discord" hint="Tes amis Discord voient que tu joues à Clover Games, depuis quand, et peuvent rejoindre le serveur Discord.">
@@ -400,6 +422,7 @@ function Integrations({ settings, onChange, steam }: Props) {
         </Toggle>
       </Row>
 
+      {!hidden.includes("steam") && (
       <Row title="Steam" hint="Lance Clover Games depuis ta bibliothèque Steam, ou depuis le mode Big Picture et la Steam Deck.">
         <p className={cn("text-sm", steam.state === "added" ? "text-primary" : "text-muted-foreground")} aria-live="polite">
           {STEAM_TEXT[steam.state]}
@@ -417,6 +440,7 @@ function Integrations({ settings, onChange, steam }: Props) {
           )}
         </div>
       </Row>
+      )}
 
       <Row title="Rapports de plantage" hint="Version du launcher, système et message d'erreur. Jamais ton mot de passe ni tes jetons de connexion.">
         <Toggle id="crash-reports" checked={settings.crashReports} onChange={(crashReports) => onChange({ crashReports })}>

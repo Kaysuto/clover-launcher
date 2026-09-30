@@ -44,3 +44,12 @@
 - Launcher relancé sans `CLOVER_MANIFEST_DIR` : manifeste n°1790708181 lu et vérifié depuis `cdn.clovergames.fr` (aucun repli sur le cache), Minecraft lancé.
 - Microsoft Store : produit « Clover Launcher » réservé (Application MSIX), identité du paquet consignée dans `SPEC.md` §3.7 et CLO-275.
 - CLO-269 : maquettes codées en React (écrans réutilisables pour CLO-274) + planche `design/board.html` ; Tailwind v4, shadcn (switch, slider, dialog, tooltip), Montserrat, Lilita One, Monocraft (OFL, sous-ensemble), skinview3d ; icônes de l'appli régénérées depuis le monogramme officiel. Direction dans `design/README.md`. Éditeur Store souhaité : « Clover Games ».
+
+## Session : 2026-09-30
+
+### CLO-274 — branchement de l'interface
+- Éditeur Store : on garde « Kaysuto Kimiya » (le nom d'éditeur n'est pas modifiable après l'inscription).
+- Rust : `store.rs` (réglages + comptes dans `~/.cloverlauncher/launcher.json`, écriture atomique), multi-comptes dans `auth.rs` (clés `refresh:<uuid>` / `session:<uuid>`, migration automatique de l'ancien compte unique), `status.rs` (Server List Ping), `storage.rs` (espace par catégorie, nettoyage des vieux journaux), `skins.rs` (bibliothèque, skins par défaut lus dans le client, application via l'API Mojang), zone de notification, démarrage avec l'ordinateur (`--minimized`), instance unique, réglages appliqués au lancement (mémoire, arguments Java, plein écran, mods choisis, comportement au lancement).
+- Piège : le coffre de Windows limite une entrée à 2 560 caractères ; la session n'y garde plus skin ni capes (relus à la reprise via `minecraft/profile`).
+- Front : `App.tsx` réécrit (premier lancement, reconnexion, accueil, mods, skins, paramètres, plantage), `src/lib/api.ts`. Fonctions pas encore branchées masquées (`UPCOMING`) : notifications bureau, mise à jour auto, réglages recommandés, Steam, changer de dossier ; actualités, votes, notifications et mes mods vides en attendant leurs routes.
+- Vérifié : `cargo test` 25/25, clippy propre, `tsc --noEmit` et `vite build` OK, lancement réel (capture de la fenêtre).

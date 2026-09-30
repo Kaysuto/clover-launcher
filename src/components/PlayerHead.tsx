@@ -4,7 +4,8 @@ import { cn } from "@/lib/utils";
  * Visage du skin (texels 8–16) et son calque de chapeau (texels 40–48), découpés dans la texture
  * 64×64 elle-même : pas de service tiers, et le rendu reste pixelisé à toutes les tailles.
  */
-export function PlayerHead({ skin, size, className }: { skin: string; size: number; className?: string }) {
+export function PlayerHead({ skin, size, className }: { skin: string | null; size: number; className?: string }) {
+  if (!skin) return <span aria-hidden className={cn("inline-block shrink-0 rounded-[3px] bg-secondary", className)} style={{ width: size, height: size }} />;
   const layer = (x: number) => ({
     backgroundImage: `url("${skin}")`,
     backgroundSize: `${size * 8}px ${size * 8}px`,

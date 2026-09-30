@@ -6,15 +6,8 @@ use tauri::{AppHandle, Emitter};
 
 use super::install::Installation;
 use super::version::expand;
-use super::{GameError, Paths, Result};
+use super::{auto_memory_mb, GameError, LaunchOptions, Paths, Result};
 use crate::auth::Session;
-
-/// Quart de la mémoire du poste, borné entre 2 et 6 Go.
-fn memory_mb() -> u64 {
-    let mut system = sysinfo::System::new();
-    system.refresh_memory();
-    (system.total_memory() / 1024 / 1024 / 4).clamp(2048, 6144)
-}
 
 pub async fn spawn(
     app: &AppHandle,
@@ -22,6 +15,7 @@ pub async fn spawn(
     installation: Installation,
     session: &Session,
     server: &str,
+    options: &LaunchOptions,
 ) -> Result<()> {
     let Installation { java, vanilla, loader, classpath, logging_argument } = installation;
     let natives = paths.natives.join(&loader.id);
@@ -55,13 +49,17 @@ pub async fn spawn(
         .clone()
         .or(vanilla.main_class.clone())
         .ok_or_else(|| GameError::InvalidVersion("classe principale absente".into()))?;
-    let mut arguments = vec![format!("-Xmx{}M", memory_mb())];
+    let mut arguments = vec![format!("-Xmx{}M", options.memory_mb.unwrap_or_else(auto_memory_mb))];
+    arguments.extend(options.java_args.iter().cloned());
     arguments.extend(logging_argument);
     arguments.extend(expand(&vanilla.arguments.jvm, &features));
     arguments.extend(expand(&loader.arguments.jvm, &features));
     arguments.push(main_class);
     arguments.extend(expand(&vanilla.arguments.game, &features));
     arguments.extend(expand(&loader.arguments.game, &features));
+    if options.fullscreen {
+        arguments.push("--fullscreen".into());
+    }
     let arguments: Vec<String> = arguments.iter().map(|argument| substitute(argument, &variables)).collect();
 
     tokio::fs::create_dir_all(&paths.game).await?;

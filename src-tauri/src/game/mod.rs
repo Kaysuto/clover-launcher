@@ -4,10 +4,11 @@ mod download;
 mod install;
 mod java;
 mod launch;
-mod manifest;
+pub mod manifest;
 mod mods;
 mod version;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -60,6 +61,7 @@ pub struct Progress {
 /// `~/.cloverlauncher/`, séparé de `.minecraft`. Les fichiers partagés entre versions sont à la
 /// racine, ceux du joueur (options, mods, captures) dans `game/`.
 pub struct Paths {
+    pub root: PathBuf,
     pub libraries: PathBuf,
     pub assets: PathBuf,
     pub versions: PathBuf,
@@ -72,13 +74,14 @@ pub struct Paths {
 }
 
 impl Paths {
-    fn new(app: &AppHandle) -> Result<Self> {
+    pub fn new(app: &AppHandle) -> Result<Self> {
         let root = app
             .path()
             .home_dir()
             .map_err(|e| GameError::Io(std::io::Error::other(e.to_string())))?
             .join(".cloverlauncher");
         Ok(Self {
+            root: root.clone(),
             libraries: root.join("libraries"),
             assets: root.join("assets"),
             versions: root.join("versions"),
@@ -92,8 +95,47 @@ impl Paths {
     }
 }
 
+/// Réglages du joueur qui changent la ligne de commande et les mods installés.
+pub struct LaunchOptions {
+    /// `None` : mémoire automatique.
+    pub memory_mb: Option<u64>,
+    pub java_args: Vec<String>,
+    pub fullscreen: bool,
+    /// `None` : mods activés par défaut dans le manifeste.
+    pub enabled_mods: Option<HashSet<String>>,
+}
+
+/// Quart de la mémoire du poste, borné entre 2 et 6 Go.
+pub fn auto_memory_mb() -> u64 {
+    (total_memory_mb() / 4).clamp(2048, 6144)
+}
+
+pub fn total_memory_mb() -> u64 {
+    let mut system = sysinfo::System::new();
+    system.refresh_memory();
+    system.total_memory() / 1024 / 1024
+}
+
+/// Version du Java installé par le launcher (fichier `release` du runtime Mojang), s'il existe.
+pub fn installed_java(paths: &Paths) -> Option<String> {
+    let entries = std::fs::read_dir(&paths.runtimes).ok()?;
+    entries.flatten().find_map(|entry| {
+        let candidates = [entry.path().join("release"), entry.path().join("jre.bundle/Contents/Home/release")];
+        candidates.iter().find_map(|file| {
+            let text = std::fs::read_to_string(file).ok()?;
+            text.lines().find_map(|line| line.strip_prefix("JAVA_VERSION=").map(|value| value.trim_matches('"').to_owned()))
+        })
+    })
+}
+
+/// Manifeste courant (téléchargé, sinon en cache), pour l'interface.
+pub async fn catalogue(app: &AppHandle) -> Result<manifest::Manifest> {
+    let paths = Paths::new(app)?;
+    manifest::load(&download::client(), &paths.manifest).await
+}
+
 /// Installe ce qui manque puis démarre le jeu, connecté directement au serveur.
-pub async fn play(app: &AppHandle, session: &Session) -> Result<()> {
+pub async fn play(app: &AppHandle, session: &Session, options: LaunchOptions) -> Result<()> {
     let paths = Paths::new(app)?;
     let http = download::client();
     let progress = |progress: Progress| {
@@ -101,7 +143,7 @@ pub async fn play(app: &AppHandle, session: &Session) -> Result<()> {
     };
     let manifest = manifest::load(&http, &paths.manifest).await?;
     manifest::check_launcher_version(&manifest)?;
-    let enabled = manifest.default_mods();
+    let enabled = options.enabled_mods.clone().unwrap_or_else(|| manifest.default_mods());
     eprintln!(
         "[manifest] n°{} : Minecraft {}, Fabric {}, {} mods activés",
         manifest.serial,
@@ -114,5 +156,5 @@ pub async fn play(app: &AppHandle, session: &Session) -> Result<()> {
         progress(Progress { phase: "mods", done, total })
     })
     .await?;
-    launch::spawn(app, &paths, installation, session, &manifest.server.host).await
+    launch::spawn(app, &paths, installation, session, &manifest.server.host, &options).await
 }

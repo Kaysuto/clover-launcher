@@ -7,6 +7,7 @@ import { PlayButton } from "@/components/PlayButton";
 import { SkinViewer } from "@/components/SkinViewer";
 import { VersionPicker } from "@/components/VersionPicker";
 import { secondaryButton } from "@/lib/buttons";
+import { cn } from "@/lib/utils";
 import type { GameVersion, ModeStatus, NewsItem, PlayState, SkinLook } from "@/types";
 
 type Props = {
@@ -21,6 +22,9 @@ type Props = {
   onSelectVersion: (id: string) => void;
   /** Ouvre d'office le choix de version (planche des maquettes). */
   versionOpen?: boolean;
+  /** Statut du serveur (Server List Ping) ; `null` pendant la première mesure. */
+  server: { online: boolean; players: number | null } | null;
+  animateSkin?: boolean;
   modes: ModeStatus[];
   destination: string;
   /** Du plus récent au plus ancien : le premier article passe à la une. */
@@ -30,11 +34,9 @@ type Props = {
 
 const date = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
 
-export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, versions, selectedVersion, onSelectVersion, versionOpen, modes, destination, news, onOpenLink }: Props) {
+export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, versions, selectedVersion, onSelectVersion, versionOpen, server, animateSkin, modes, destination, news, onOpenLink }: Props) {
   const [featured, ...others] = news;
   const current = versions.find((version) => version.id === selectedVersion) ?? versions[0];
-  const online = modes.filter((mode) => mode.players !== null);
-  const players = online.reduce((sum, mode) => sum + (mode.players ?? 0), 0);
   const destinationName = modes.find((mode) => mode.id === destination)?.name ?? "Lobby";
 
   return (
@@ -62,7 +64,7 @@ export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, vers
           <div className="flex shrink-0 items-end gap-2">
             <div className="relative -mb-8">
               <div aria-hidden className="absolute bottom-7 left-1/2 h-4 w-28 -translate-x-1/2 rounded-[50%] bg-black/60 blur-[6px]" />
-              <SkinViewer look={look} width={170} height={270} />
+              <SkinViewer look={look} width={170} height={270} animate={animateSkin} />
             </div>
             <div className="flex flex-col items-center gap-3 pb-1">
               <PlayButton
@@ -72,12 +74,18 @@ export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, vers
                 picker={<VersionPicker versions={versions} selected={selectedVersion} onSelect={onSelectVersion} defaultOpen={versionOpen} />}
               />
               <p className="mc-frame flex h-9 items-center gap-2 bg-card/90 px-3.5 text-xs text-muted-foreground [--mc-radius:6px]">
-                <span className={online.length > 0 ? "size-2 rounded-full bg-primary" : "size-2 rounded-full bg-destructive"} aria-hidden />
-                {online.length > 0 ? (
+                <span className={cn("size-2 rounded-full", server === null ? "animate-pulse bg-muted-foreground" : server.online ? "bg-primary" : "bg-destructive")} aria-hidden />
+                {server === null ? (
+                  <span>Recherche du serveur…</span>
+                ) : server.online ? (
                   <>
                     <span className="font-semibold text-foreground">En ligne</span>
                     <span aria-hidden>·</span>
-                    <span className="font-pixel text-[12px] text-foreground">{players}</span> joueurs
+                    {server.players !== null && (
+                      <>
+                        <span className="font-pixel text-[12px] text-foreground">{server.players}</span> joueurs
+                      </>
+                    )}
                   </>
                 ) : (
                   <span className="font-semibold text-destructive">Hors ligne</span>

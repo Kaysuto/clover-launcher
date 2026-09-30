@@ -1,5 +1,13 @@
+/** Cape possédée par le compte, telle que renvoyée par Mojang. */
+export type CapeInfo = { id: string; name: string; url: string; active: boolean };
+
 /** Profil Minecraft du compte actif (le jeton reste côté Rust). */
-export type Profile = { uuid: string; name: string };
+export type Profile = {
+  uuid: string;
+  name: string;
+  skin?: { url: string; model: SkinModel } | null;
+  capes?: CapeInfo[];
+};
 
 export type InstallPhase = "java" | "libraries" | "assets" | "mods";
 
@@ -7,12 +15,15 @@ export type InstallPhase = "java" | "libraries" | "assets" | "mods";
 export type Progress = { phase: InstallPhase; done: number; total: number };
 
 export type PlayState =
-  | { kind: "ready" }
+  | { kind: "ready"; error?: string }
   | { kind: "installing"; progress?: Progress }
   | { kind: "running" };
 
-/** `players` vaut `null` quand le serveur du mode ne répond pas. */
-export type ModeStatus = { id: string; name: string; icon: string | null; players: number | null };
+/**
+ * `players` : nombre en jeu, `null` si le serveur du mode ne répond pas, `undefined` si on ne le
+ * sait pas (compteurs par mode pas encore publiés, CLO-270).
+ */
+export type ModeStatus = { id: string; name: string; icon: string | null; players?: number | null };
 
 export type NewsItem = {
   title: string;

@@ -17,6 +17,9 @@ type Props = {
   onSelect: (skin: SavedSkin) => void;
   onAddFile: (file: File) => void;
   onEdit: () => void;
+  /** Application en cours ou erreur de Mojang. */
+  status?: { kind: "busy" | "error"; message: string } | null;
+  animateSkin?: boolean;
 };
 
 /** Cadre de sélection de la barre d'inventaire, repris pour le skin porté. */
@@ -91,14 +94,14 @@ function AddSkinTile({ onFile }: { onFile: (file: File) => void }) {
 
 const grid = "grid grid-cols-[repeat(auto-fill,minmax(132px,1fr))] gap-3";
 
-export function SkinsScreen({ playerName, look, saved, defaults, activeId, onSelect, onAddFile, onEdit }: Props) {
+export function SkinsScreen({ playerName, look, saved, defaults, activeId, onSelect, onAddFile, onEdit, status, animateSkin }: Props) {
   return (
     <main className="flex min-h-0 flex-1">
       <aside className="relative flex w-[clamp(280px,30vw,380px)] shrink-0 flex-col items-center justify-center gap-3 border-r border-border bg-[radial-gradient(ellipse_at_50%_45%,rgb(82_169_108/0.12),transparent_65%)]">
         <span className="rounded-[3px] bg-black/50 px-2 py-0.5 font-pixel text-[15px] text-white">{playerName}</span>
         <div className="relative">
           <div aria-hidden className="absolute bottom-9 left-1/2 h-5 w-32 -translate-x-1/2 rounded-[50%] bg-black/60 blur-[7px]" />
-          <SkinViewer look={look} width={230} height={360} />
+          <SkinViewer look={look} width={230} height={360} animate={animateSkin} />
         </div>
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <MoveHorizontal className="size-3.5" aria-hidden />
@@ -115,6 +118,11 @@ export function SkinsScreen({ playerName, look, saved, defaults, activeId, onSel
         <p className="mt-2 max-w-[560px] text-sm text-muted-foreground">
           Le skin choisi s'applique à ton compte Minecraft&nbsp;: les autres joueurs le voient sur Clover Games comme sur tous les serveurs.
         </p>
+        {status && (
+          <p role={status.kind === "error" ? "alert" : "status"} className={cn("mt-3 text-sm", status.kind === "error" ? "text-[#ffb3b0]" : "text-muted-foreground")}>
+            {status.message}
+          </p>
+        )}
 
         <section aria-labelledby="skins-saved" className="mt-7 flex flex-col gap-3">
           <h2 id="skins-saved" className="font-display text-xl">
@@ -128,6 +136,7 @@ export function SkinsScreen({ playerName, look, saved, defaults, activeId, onSel
           </ul>
         </section>
 
+        {defaults.length > 0 && (
         <section aria-labelledby="skins-defaults" className="mt-8 flex flex-col gap-3">
           <h2 id="skins-defaults" className="font-display text-xl">
             Skins par défaut
@@ -138,6 +147,7 @@ export function SkinsScreen({ playerName, look, saved, defaults, activeId, onSel
             ))}
           </ul>
         </section>
+        )}
       </div>
     </main>
   );

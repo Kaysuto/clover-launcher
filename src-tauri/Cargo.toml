@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -28,13 +28,16 @@ url = "2.5.8"
 thiserror = "2.0.21"
 rand = "0.10.3"
 tokio = { version = "1.53.1", features = ["net", "io-util", "time", "sync", "fs", "process", "macros", "rt"] }
-reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls", "form"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls", "form", "multipart"] }
 keyring = "4.2.0"
 futures-util = "0.3.34"
 sha1 = "0.11.0"
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 ed25519-dalek = "2"
 discord-rich-presence = "1.1.0"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+tauri-plugin-autostart = "2.6.0"
+tauri-plugin-single-instance = "2.5.1"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
