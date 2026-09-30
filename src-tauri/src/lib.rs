@@ -263,6 +263,7 @@ async fn play(
     state: State<'_, AppState>,
     current: State<'_, CurrentSession>,
     presence: State<'_, Presence>,
+    mode: Option<String>,
 ) -> Result<(), game::GameError> {
     let session = current.0.lock().await.clone().ok_or(game::GameError::NotSignedIn)?;
     let settings = state.snapshot().settings;
@@ -272,7 +273,7 @@ async fn play(
         fullscreen: settings.fullscreen,
         enabled_mods: settings.enabled_mods.as_ref().map(|mods| mods.iter().cloned().collect()),
     };
-    game::play(&app, &session, options)
+    game::play(&app, &session, options, mode.as_deref())
         .await
         .inspect(|()| eprintln!("[game] Minecraft lancé"))
         .inspect_err(|e| eprintln!("[game] échec du lancement : {e}"))?;

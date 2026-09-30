@@ -17,7 +17,7 @@ Le launcher suit le serveur : la version, les mods et les modes sont décrits da
 | Premier lancement | Trois étapes. **Comptes** : plusieurs comptes Microsoft d'affilée (chacun doit posséder Minecraft Java), un compte principal. **Importer** : installations trouvées dans les autres launchers, une à la fois, avec le choix de ce qu'on reprend (voir 3.5 bis). **Terminé** : récapitulatif, réglages recommandés pour la machine, accord pour les rapports de plantage. |
 | Connexion | Microsoft uniquement, sans écran séparé : l'étape Comptes sert aussi de reconnexion quand plus aucun compte n'est enregistré. Bascule entre comptes en un clic. |
 | Version de Minecraft | La version qui sera lancée est écrite sous « Jouer » (« Minecraft 26.2 · Fabric », « · solo » si elle ne peut pas rejoindre le serveur). À droite du bouton, une dalle avec l'icône d'échange ouvre la liste, sur le modèle du Laby Launcher : la version du serveur en premier, les autres (solo, autres serveurs) avec l'avertissement « Ne peut pas rejoindre Clover Games ». Téléchargement à la demande, version choisie mémorisée. Quand le serveur change de version (manifeste), le launcher repasse d'office sur la nouvelle. |
-| Accueil | Bouton « Jouer » (Quick Play sur `play.clovergames.fr`, arrivée au Lobby). Aperçu 3D du skin du compte actif (façon Laby Launcher). Cartes des 6 modes avec le nombre de joueurs connectés. Actualités du blog du site. Bandeau de maintenance. |
+| Accueil | Bouton « Jouer » (Quick Play sur `play.clovergames.fr`, arrivée au Lobby). Aperçu 3D du skin du compte actif (façon Laby Launcher). Cartes des 6 modes avec le nombre de joueurs connectés ; un clic lance le jeu directement sur le mode (voir 3.6 bis). Actualités du blog du site. Bandeau de maintenance. |
 | Mods | Deux onglets. **Catalogue Clover** : organisé (performance, visuel, confort), chaque mod activable, grisé s'il n'existe pas pour la version du serveur. **Mes mods** : mods ajoutés par le joueur (`.jar` ou import d'un autre launcher), non vérifiés, avec avertissement anticheat ; ceux faits pour une autre version ou un autre loader sont signalés et ne peuvent pas être activés, une mise à jour est proposée quand Modrinth en connaît une. |
 | Skins | Bibliothèque de skins (ajout d'un `.png`, skins par défaut du jeu), éditeur : texture, bras classiques ou fins, cape parmi celles du compte. Appliqué au compte Minecraft via l'API Mojang. Aperçu 3D en rotation horizontale seule. |
 | Paramètres | Six onglets. **Générales** : comptes, démarrer avec l'ordinateur, zone de notification, notifications bureau, mises à jour, canal bêta (staff). **Apparence** : taille de l'interface, animations, skin animé, derniers votes. **Jeu** : mémoire, comportement du launcher au lancement, plein écran, réglages recommandés, Java et arguments avancés. **Stockage** : espace utilisé par catégorie, nettoyage, dossier du jeu. **Intégrations** : Discord, Steam (ajout du launcher à la bibliothèque), rapports de plantage. **À propos** : versions, aide. |
@@ -155,6 +155,15 @@ Chaque réponse porte `schema: 1` ; ne changer la forme qu'en incrémentant ce n
 
 **Joueurs par mode** : le cron d'analytique du site interroge déjà chaque serveur en RCON toutes les 5 min (`analytics_servers`, dont le `slug` suit `storage.server-name` et les `modes[].id` du manifeste). Pas de table côté plugin (CLO-270 annulé). `online`/`players` valent `null` quand l'échantillon a plus de 20 min : la carte n'affiche alors pas de compteur.
 
+### 3.6 bis Quick Play par mode
+
+Un mode dont l'entrée du manifeste porte `host` (ex. `bedwars.play.clovergames.fr`) devient cliquable : le launcher lance `--quickPlayMultiplayer <host>`. Sans `host`, la carte reste informative et le joueur passe par le Lobby. Activer un mode demande, dans l'ordre :
+
+1. DNS : `*.play.clovergames.fr` vers la même cible que `play.clovergames.fr` (hors proxy Cloudflare).
+2. Proxy FlameCord : `forced_hosts` associe chaque adresse à son serveur (`bedwars.play.clovergames.fr: bedwars`). Un forced host ne joue qu'à la connexion initiale ; un serveur éteint renvoie vers `priorities` (Lobby).
+3. Plugin : `pack.send-on-join: true` sur le backend cible, sinon un joueur arrivé sans passer par le Lobby n'a pas le resource pack. `ContentPackListener` évite déjà le renvoi aux joueurs transférés depuis un autre serveur Clover.
+4. Manifeste : ajouter `host` au mode, puis publier.
+
 ### 3.7 Distribution sans budget
 
 | OS | Canal principal | Signature | Mises à jour |
@@ -190,4 +199,4 @@ GitHub Actions sur un dépôt privé `Kaysuto/clover-launcher` : lint, tests Rus
 4. Site : `/api/launcher/news`, `/status` et `/votes`.
 5. Packaging 3 OS, updater, CI, soumission Store.
 6. Page `/launcher` du site, bêta staff, puis lancement public.
-7. V2 : mod Clover, session site, bonus, envoi direct sur un mode, Discord RPC, skins, amis.
+7. V2 : mod Clover, session site, bonus, Discord RPC, skins, amis.

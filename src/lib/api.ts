@@ -22,7 +22,7 @@ export type Catalogue = {
   minecraft: { version: string };
   fabric: { loader: string };
   server: { host: string };
-  modes: { id: string; name: string; image: string | null }[];
+  modes: { id: string; name: string; image: string | null; host?: string }[];
   mods: {
     id: string;
     name: string;
@@ -67,5 +67,6 @@ export const api = {
   addSkin: (bytes: Uint8Array, name: string, model: SkinModel) => invoke<SkinEntry>("add_skin", { bytes: Array.from(bytes), name, model }),
   removeSkin: (id: string) => invoke<void>("remove_skin", { id }),
   applySkin: (texture: string, model: SkinModel, cape: string | null) => invoke<Profile>("apply_skin", { texture, model, cape }),
-  play: () => invoke<void>("play"),
+  /** `mode` : identifiant d'un mode du manifeste à rejoindre directement, absent pour le Lobby. */
+  play: (mode?: string) => invoke<void>("play", { mode: mode ?? null }),
 };

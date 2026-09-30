@@ -20,6 +20,8 @@ use crate::auth::Session;
 pub enum GameError {
     #[error("Aucun compte connecté.")]
     NotSignedIn,
+    #[error("Ce mode ne se rejoint pas directement : passe par le Lobby.")]
+    NoQuickPlay,
     #[error("Une mise à jour du Clover Launcher est nécessaire pour jouer.")]
     LauncherOutdated,
     #[error("Impossible de récupérer la configuration du jeu. Vérifie ta connexion Internet.")]
@@ -135,7 +137,8 @@ pub async fn catalogue(app: &AppHandle) -> Result<manifest::Manifest> {
 }
 
 /// Installe ce qui manque puis démarre le jeu, connecté directement au serveur.
-pub async fn play(app: &AppHandle, session: &Session, options: LaunchOptions) -> Result<()> {
+/// `mode` : identifiant d'un mode du manifeste à rejoindre directement, `None` pour le Lobby.
+pub async fn play(app: &AppHandle, session: &Session, options: LaunchOptions, mode: Option<&str>) -> Result<()> {
     let paths = Paths::new(app)?;
     let http = download::client();
     let progress = |progress: Progress| {
@@ -143,6 +146,7 @@ pub async fn play(app: &AppHandle, session: &Session, options: LaunchOptions) ->
     };
     let manifest = manifest::load(&http, &paths.manifest).await?;
     manifest::check_launcher_version(&manifest)?;
+    let server = manifest.server_for(mode).ok_or(GameError::NoQuickPlay)?.to_owned();
     let enabled = options.enabled_mods.clone().unwrap_or_else(|| manifest.default_mods());
     eprintln!(
         "[manifest] n°{} : Minecraft {}, Fabric {}, {} mods activés",
@@ -156,5 +160,5 @@ pub async fn play(app: &AppHandle, session: &Session, options: LaunchOptions) ->
         progress(Progress { phase: "mods", done, total })
     })
     .await?;
-    launch::spawn(app, &paths, installation, session, &manifest.server.host, &options).await
+    launch::spawn(app, &paths, installation, session, &server, &options).await
 }

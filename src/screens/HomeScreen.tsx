@@ -16,7 +16,8 @@ type Props = {
   enabledMods: string[];
   onManageMods: () => void;
   play: PlayState;
-  onPlay: () => void;
+  /** Sans argument : la destination de « Jouer ». Avec un mode : Quick Play sur ce mode. */
+  onPlay: (mode?: string) => void;
   versions: GameVersion[];
   selectedVersion: string;
   onSelectVersion: (id: string) => void;
@@ -69,7 +70,7 @@ export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, vers
             <div className="flex flex-col items-center gap-3 pb-1">
               <PlayButton
                 state={play}
-                onPlay={onPlay}
+                onPlay={() => onPlay()}
                 version={`Minecraft ${current.id} · ${current.loader.split(" ")[0]}${current.joinable ? "" : " · solo"}`}
                 picker={<VersionPicker versions={versions} selected={selectedVersion} onSelect={onSelectVersion} defaultOpen={versionOpen} />}
               />
@@ -101,8 +102,12 @@ export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, vers
           <h2 id="modes-title" className="font-display text-xl">
             Modes de jeu
           </h2>
-          <ModeGrid modes={modes} destination={destination} />
-          <p className="text-xs leading-snug text-muted-foreground">«&nbsp;Jouer&nbsp;» te connecte au {destinationName}, puis tu choisis ton mode avec la boussole.</p>
+          <ModeGrid modes={modes} destination={destination} onPlay={onPlay} busy={play.kind !== "ready"} />
+          <p className="text-xs leading-snug text-muted-foreground">
+            {modes.some((mode) => mode.quickPlay)
+              ? <>Clique sur un mode pour t'y connecter directement. «&nbsp;Jouer&nbsp;» te mène au {destinationName}.</>
+              : <>«&nbsp;Jouer&nbsp;» te connecte au {destinationName}, puis tu choisis ton mode avec la boussole.</>}
+          </p>
 
           <div className="mt-auto flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 text-xs">
             <span className="shrink-0 text-muted-foreground">

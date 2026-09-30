@@ -55,6 +55,10 @@ pub struct Mode {
     pub id: String,
     pub name: String,
     pub image: Option<String>,
+    /// Adresse qui connecte directement à ce mode (Quick Play). Absente : le mode se rejoint
+    /// depuis le Lobby. Le proxy reconnaît le mode à l'adresse tapée (`forced_hosts`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +85,14 @@ pub struct ModFile {
 }
 
 impl Manifest {
+    /// Adresse à rejoindre : celle du mode demandé, le serveur principal sinon.
+    pub fn server_for(&self, mode: Option<&str>) -> Option<&str> {
+        match mode {
+            None => Some(&self.server.host),
+            Some(id) => self.modes.iter().find(|m| m.id == id)?.host.as_deref(),
+        }
+    }
+
     /// Mods visibles activés par défaut. Les choix du joueur remplaceront cette liste (CLO-274).
     pub fn default_mods(&self) -> HashSet<String> {
         self.mods.iter().filter(|m| m.default && !m.hidden && m.available).map(|m| m.id.clone()).collect()
@@ -222,7 +234,8 @@ mod tests {
         "schema": 1, "serial": 10, "minLauncherVersion": "0.1.0",
         "minecraft": {"version": "26.2"}, "fabric": {"loader": "0.19.5"},
         "server": {"host": "play.clovergames.fr"},
-        "modes": [{"id": "lobby", "name": "Lobby", "image": null}],
+        "modes": [{"id": "lobby", "name": "Lobby", "image": null},
+                  {"id": "bedwars", "name": "BedWars", "image": null, "host": "bedwars.play.clovergames.fr"}],
         "mods": [
             {"id": "iris", "name": "Iris", "description": null, "category": "visual", "default": false,
              "hidden": false, "available": true, "requires": ["sodium"],
@@ -278,6 +291,15 @@ mod tests {
         let mut ids: Vec<&str> = manifest.mods_to_install(&enabled).iter().map(|m| m.id.as_str()).collect();
         ids.sort();
         assert_eq!(ids, ["iris", "sodium"]);
+    }
+
+    #[test]
+    fn joins_a_mode_only_when_the_manifest_gives_its_address() {
+        let manifest: Manifest = serde_json::from_str(MANIFEST).unwrap();
+        assert_eq!(manifest.server_for(None), Some("play.clovergames.fr"));
+        assert_eq!(manifest.server_for(Some("bedwars")), Some("bedwars.play.clovergames.fr"));
+        assert_eq!(manifest.server_for(Some("lobby")), None);
+        assert_eq!(manifest.server_for(Some("inconnu")), None);
     }
 
     #[test]

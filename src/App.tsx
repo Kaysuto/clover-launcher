@@ -237,10 +237,10 @@ export default function App() {
   }));
 
   // ── Jeu ──
-  const startGame = async () => {
+  const startGame = async (mode?: string) => {
     setPlay({ kind: "installing" });
     try {
-      await api.play();
+      await api.play(mode);
       setPlay({ kind: "running" });
     } catch (reason) {
       setPlay({ kind: "ready", error: String(reason) });
@@ -420,7 +420,13 @@ export default function App() {
               selectedVersion={versions[0].id}
               onSelectVersion={() => {}}
               server={server && { online: server.online, players: server.players }}
-              modes={(catalogue?.modes ?? []).map((mode) => ({ id: mode.id, name: mode.name, icon: mode.image, players: modePlayers(feed, mode.id) }))}
+              modes={(catalogue?.modes ?? []).map((mode) => ({
+                id: mode.id,
+                name: mode.name,
+                icon: mode.image,
+                players: modePlayers(feed, mode.id),
+                quickPlay: Boolean(mode.host),
+              }))}
               destination="lobby"
               news={feed.news ?? []}
               onOpenLink={open}
