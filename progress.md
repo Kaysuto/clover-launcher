@@ -53,3 +53,9 @@
 - Piège : le coffre de Windows limite une entrée à 2 560 caractères ; la session n'y garde plus skin ni capes (relus à la reprise via `minecraft/profile`).
 - Front : `App.tsx` réécrit (premier lancement, reconnexion, accueil, mods, skins, paramètres, plantage), `src/lib/api.ts`. Fonctions pas encore branchées masquées (`UPCOMING`) : notifications bureau, mise à jour auto, réglages recommandés, Steam, changer de dossier ; actualités, votes, notifications et mes mods vides en attendant leurs routes.
 - Vérifié : `cargo test` 25/25, clippy propre, `tsc --noEmit` et `vite build` OK, lancement réel (capture de la fenêtre).
+
+### CLO-273 — accueil branché sur le site, Quick Play par mode
+- Site (`a72229c`, en ligne) : `/api/launcher/news` (`blog_posts`), `/status` (dernier échantillon du cron d'analytique + maintenance), `/votes` (`vote_totals.last_vote_at` du plugin). CLO-270 annulé : les joueurs par serveur existaient déjà côté site.
+- Launcher : `site.rs` + commande `site_feed`, relue toutes les 60 s ; bandeau des votes, article à la une, actualités et joueurs par mode.
+- Quick Play : `modes[].host` dans le manifeste (n°1790759444 publié sur R2, SHA-256 vérifié) ; un clic sur la carte lance `--quickPlayMultiplayer <host>`. DNS `*.play.clovergames.fr` (CNAME, hors proxy Cloudflare) créé. `send-on-join: true` mis sur tous les serveurs par Kaysuto.
+- Reste : `forced_hosts` du proxy FlameCord (accès SFTP au proxy manquant) ; sans eux, un clic sur un mode mène au Lobby.

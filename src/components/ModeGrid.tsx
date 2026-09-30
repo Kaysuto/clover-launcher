@@ -37,29 +37,32 @@ export function ModeGrid({ modes, destination, onPlay, busy = false }: Props) {
 
         const content = (
           <>
-            <span className="mc-slot grid size-10 shrink-0 place-items-center [--mc-radius:6px]">
+            <span className="mc-slot relative grid size-10 shrink-0 place-items-center [--mc-radius:6px]">
               <img src={mode.icon ?? monogram} alt="" className={cn("size-6", mode.icon ? "pixelated" : "opacity-70", offline && "grayscale")} />
+              {/* Au survol, la case affiche « lancer » à la place de l'icône, sans rien décaler. */}
+              {playable && (
+                <span
+                  aria-hidden
+                  className="absolute inset-0 grid place-items-center rounded-[4px] bg-black/65 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-disabled:opacity-0"
+                >
+                  <Play className="size-4 fill-current text-accent" />
+                </span>
+              )}
             </span>
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="truncate text-[13px] leading-tight font-bold">{mode.name}</span>
               {mode.players === undefined ? null : offline ? (
-                <span className="flex items-center gap-1.5 text-[11px] text-destructive">
-                  <span aria-hidden className="size-1.5 rounded-full bg-destructive" />
+                <span className="flex items-center gap-1.5 text-[11px] whitespace-nowrap text-destructive">
+                  <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-destructive" />
                   Hors ligne
                 </span>
               ) : (
                 <span className="flex items-center gap-1.5 text-[11px] whitespace-nowrap text-muted-foreground">
-                  <span aria-hidden className="size-1.5 rounded-full bg-primary" />
+                  <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
                   <span className="font-pixel text-[11px] text-foreground">{mode.players}</span> en jeu
                 </span>
               )}
             </span>
-            {playable && (
-              <Play
-                aria-hidden
-                className="size-3.5 shrink-0 fill-current text-accent opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-disabled:opacity-0"
-              />
-            )}
           </>
         );
 
