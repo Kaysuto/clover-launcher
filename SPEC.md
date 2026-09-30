@@ -146,11 +146,14 @@ Détection au premier lancement (et depuis les paramètres) des installations du
 
 | Route | Contenu | Source |
 |---|---|---|
-| `GET /api/launcher/news` | 5 derniers articles publiés : titre, extrait, image, URL | table `blog_posts` |
-| `GET /api/launcher/status` | Joueurs par mode, état de maintenance | MySQL (nouvelle table ci-dessous) + logique de `api/maintenance-status` |
+| `GET /api/launcher/news` | 5 derniers articles publiés : titre, extrait, catégorie, image, URL | table `blog_posts` |
+| `GET /api/launcher/status` | Joueurs par mode, état de maintenance | dernier échantillon de `server_samples` (`getServerHealth()`) + `site_settings` |
+| `GET /api/launcher/votes` | 10 derniers votants (pseudo, heure) | `vote_totals.last_vote_at` du plugin, connexion Vote en lecture |
 | `GET /api/launcher/session/challenge`, `POST /api/launcher/session` | Preuve d'identité `hasJoined` (V2) | Mojang + `users_meta` |
 
-**Joueurs par mode** : aucune donnée n'existe aujourd'hui, les backends restent derrière le proxy. Chaque serveur écrira toutes les 15 s une ligne `clover_server_status(server_name, online, max, updated_at)` indexée par `storage.server-name`. Le site la lit avec sa connexion MySQL de lecture. Côté plugin, une nouvelle table impose une nouvelle version de baseline SQL : ne pas modifier une baseline déjà appliquée.
+Chaque réponse porte `schema: 1` ; ne changer la forme qu'en incrémentant ce numéro, les anciens launchers lisent ces routes longtemps. Le cœur Rust les lit toutes les 60 s (`site.rs`, commande `site_feed`) ; `CLOVER_SITE_URL` remplace `https://clovergames.fr` en développement.
+
+**Joueurs par mode** : le cron d'analytique du site interroge déjà chaque serveur en RCON toutes les 5 min (`analytics_servers`, dont le `slug` suit `storage.server-name` et les `modes[].id` du manifeste). Pas de table côté plugin (CLO-270 annulé). `online`/`players` valent `null` quand l'échantillon a plus de 20 min : la carte n'affiche alors pas de compteur.
 
 ### 3.7 Distribution sans budget
 
@@ -184,7 +187,7 @@ GitHub Actions sur un dépôt privé `Kaysuto/clover-launcher` : lint, tests Rus
 1. Prototype : auth, installation 26.2 + Fabric, Quick Play (Windows).
 2. Manifeste signé, script de résolution Modrinth, publication R2.
 3. UI V1 : connexion, accueil, mods, paramètres, installation.
-4. Plugin : table `clover_server_status`. Site : `/api/launcher/news` et `/status`.
+4. Site : `/api/launcher/news`, `/status` et `/votes`.
 5. Packaging 3 OS, updater, CI, soumission Store.
 6. Page `/launcher` du site, bêta staff, puis lancement public.
 7. V2 : mod Clover, session site, bonus, envoi direct sur un mode, Discord RPC, skins, amis.

@@ -5,7 +5,8 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { Settings } from "@/screens/SettingsScreen";
-import type { ModCategory, Profile, SkinModel } from "@/types";
+import type { RecentVote } from "@/components/VoteTicker";
+import type { ModCategory, NewsItem, Profile, SkinModel } from "@/types";
 
 export type AccountRef = { uuid: string; name: string; skinUrl: string | null };
 
@@ -35,6 +36,12 @@ export type Catalogue = {
 };
 
 export type ServerStatus = { online: boolean; players: number | null; max: number | null };
+/** Contenu publié par le site ; une partie à `null` n'a pas pu être lue cette fois-ci. */
+export type SiteFeed = {
+  news: NewsItem[] | null;
+  modes: { id: string; online: boolean | null; players: number | null }[] | null;
+  votes: RecentVote[] | null;
+};
 export type SystemInfo = { totalMemoryGb: number; autoMemoryGb: number; java: string | null; launcher: string };
 export type StorageUsage = { parts: { id: string; label: string; bytes: number }[]; reclaimable: number; gameDir: string };
 export type SkinEntry = { id: string; name: string; model: SkinModel; texture: string };
@@ -49,6 +56,7 @@ export const api = {
   finishOnboarding: () => invoke<void>("finish_onboarding"),
   getCatalogue: () => invoke<Catalogue>("get_catalogue"),
   serverStatus: (host: string) => invoke<ServerStatus>("server_status", { host }),
+  siteFeed: () => invoke<SiteFeed>("site_feed"),
   systemInfo: () => invoke<SystemInfo>("system_info"),
   storageUsage: () => invoke<StorageUsage>("storage_usage"),
   cleanStorage: () => invoke<number>("clean_storage"),

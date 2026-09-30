@@ -7,7 +7,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NotificationBell } from "@/components/NotificationBell";
 import { SideNav } from "@/components/SideNav";
 import { TitleBar } from "@/components/TitleBar";
-import { api, type Catalogue, type ServerStatus, type SkinEntry, type Stored, type StorageUsage, type SystemInfo } from "@/lib/api";
+import { VoteTicker } from "@/components/VoteTicker";
+import { api, type Catalogue, type ServerStatus, type SiteFeed, type SkinEntry, type Stored, type StorageUsage, type SystemInfo } from "@/lib/api";
 import { CrashDialog } from "@/screens/Dialogs";
 import { HomeScreen } from "@/screens/HomeScreen";
 import { ModsScreen, type ModsView } from "@/screens/ModsScreen";
@@ -35,8 +36,19 @@ const STORAGE_COLORS: Record<string, string> = {
 const SERVER_POLL_MS = 60_000;
 /** Après un échec (souvent le premier ping, lancé pendant le démarrage), on réessaie plus vite. */
 const SERVER_RETRY_MS = 8_000;
+/** Actualités, joueurs par mode et votes : le site les met en cache 30 s à 5 min. */
+const SITE_POLL_MS = 60_000;
+
+const SITE_URL = "https://clovergames.fr";
 
 type Phase = "loading" | "onboarding-accounts" | "onboarding-done" | "signin" | "app";
+
+/** `undefined` tant que le site n'a rien dit de ce mode, `null` s'il est hors ligne. */
+function modePlayers(feed: SiteFeed, id: string): number | null | undefined {
+  const mode = feed.modes?.find((entry) => entry.id === id);
+  if (!mode || mode.online === null) return undefined;
+  return mode.online ? mode.players : null;
+}
 
 const toCape = (cape: { id: string; name: string; url: string }): Cape => ({ id: cape.id, name: cape.name, texture: cape.url });
 
@@ -62,6 +74,7 @@ export default function App() {
 
   const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
   const [server, setServer] = useState<ServerStatus | null>(null);
+  const [feed, setFeed] = useState<SiteFeed>({ news: null, modes: null, votes: null });
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [storage, setStorage] = useState<StorageUsage | null>(null);
 
@@ -140,6 +153,26 @@ export default function App() {
       window.clearTimeout(timer);
     };
   }, [catalogue]);
+
+  // ── Contenu du site : une partie illisible garde la version précédente ──
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const next = await api.siteFeed().catch(() => null);
+      if (cancelled || !next) return;
+      setFeed((previous) => ({
+        news: next.news ?? previous.news,
+        modes: next.modes ?? previous.modes,
+        votes: next.votes ?? previous.votes,
+      }));
+    };
+    refresh();
+    const timer = window.setInterval(refresh, SITE_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   // ── Apparence : taille de l'interface et animations ──
   const settings = stored?.settings;
@@ -368,6 +401,7 @@ export default function App() {
             ? { profile, skin: profile.skin?.url ?? activeAccount?.skinUrl ?? null, tab, onTab: setTab, onAccount: () => (setTab("settings"), setSettingsTab("general")) }
             : undefined
         }
+        activity={settings.showVotes && feed.votes ? <VoteTicker votes={feed.votes} onVote={() => open(`${SITE_URL}/vote`)} /> : undefined}
         notifications={<NotificationBell items={[]} onOpen={() => {}} onReadAll={() => {}} />}
       />
 
@@ -386,9 +420,9 @@ export default function App() {
               selectedVersion={versions[0].id}
               onSelectVersion={() => {}}
               server={server && { online: server.online, players: server.players }}
-              modes={(catalogue?.modes ?? []).map((mode) => ({ id: mode.id, name: mode.name, icon: mode.image, players: undefined }))}
+              modes={(catalogue?.modes ?? []).map((mode) => ({ id: mode.id, name: mode.name, icon: mode.image, players: modePlayers(feed, mode.id) }))}
               destination="lobby"
-              news={[]}
+              news={feed.news ?? []}
               onOpenLink={open}
             />
           )}

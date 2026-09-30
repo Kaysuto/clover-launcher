@@ -1,6 +1,6 @@
 //! Installation et lancement de Minecraft pour Clover Games.
 
-mod download;
+pub(crate) mod download;
 mod install;
 mod java;
 mod launch;

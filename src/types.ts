@@ -21,7 +21,7 @@ export type PlayState =
 
 /**
  * `players` : nombre en jeu, `null` si le serveur du mode ne répond pas, `undefined` si on ne le
- * sait pas (compteurs par mode pas encore publiés, CLO-270).
+ * sait pas (site injoignable, ou dernier relevé trop ancien).
  */
 export type ModeStatus = { id: string; name: string; icon: string | null; players?: number | null };
 

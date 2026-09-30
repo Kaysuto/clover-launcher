@@ -1,6 +1,7 @@
 mod auth;
 mod game;
 mod presence;
+mod site;
 mod skins;
 mod status;
 mod storage;
@@ -143,6 +144,11 @@ async fn get_catalogue(app: AppHandle) -> Result<game::manifest::Manifest, game:
 #[tauri::command]
 async fn server_status(host: String) -> status::ServerStatus {
     status::ping(&host, 25565).await
+}
+
+#[tauri::command]
+async fn site_feed() -> site::Feed {
+    site::feed().await
 }
 
 #[derive(Serialize)]
@@ -374,6 +380,7 @@ pub fn run() {
             finish_onboarding,
             get_catalogue,
             server_status,
+            site_feed,
             system_info,
             storage_usage,
             clean_storage,
