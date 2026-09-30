@@ -160,7 +160,7 @@ Chaque réponse porte `schema: 1` ; ne changer la forme qu'en incrémentant ce n
 Un mode dont l'entrée du manifeste porte `host` (ex. `bedwars.play.clovergames.fr`) devient cliquable : le launcher lance `--quickPlayMultiplayer <host>`. Sans `host`, la carte reste informative et le joueur passe par le Lobby. Activer un mode demande, dans l'ordre :
 
 1. DNS : `*.play.clovergames.fr` vers la même cible que `play.clovergames.fr` (hors proxy Cloudflare).
-2. Proxy FlameCord (VPS OVH, `/srv/flamecord/config.yml`, session tmux `flamecord`) : `forced_hosts` associe chaque adresse à son serveur (`bedwars.play.clovergames.fr: bedwars`). Lu au démarrage seulement : redémarrer le proxy après modification. Un forced host ne joue qu'à la connexion initiale ; un serveur éteint renvoie vers `priorities` (Lobby).
+2. Proxy FlameCord (VPS OVH, `/srv/flamecord/config.yml`, session tmux `flamecord`) : `forced_hosts` associe chaque adresse à son serveur (`bedwars.play.clovergames.fr: bedwars`). Lu au démarrage seulement : redémarrer le proxy après modification. Le répartiteur de FlameCord (`flamecord.yml`, `balancer.on-join`) doit rester à `false`, sinon il envoie tout le monde au Lobby avant les `forced_hosts` ; `force_default_server: true` garde `play.clovergames.fr` sur le Lobby au lieu du dernier serveur mémorisé (`locations.yml`). Un forced host ne joue qu'à la connexion initiale ; un serveur éteint renvoie vers `priorities` (Lobby).
 3. Plugin : `pack.send-on-join: true` sur le backend cible, sinon un joueur arrivé sans passer par le Lobby n'a pas le resource pack. `ContentPackListener` évite déjà le renvoi aux joueurs transférés depuis un autre serveur Clover.
 4. Manifeste : ajouter `host` au mode, puis publier.
 
