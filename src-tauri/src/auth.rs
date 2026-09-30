@@ -180,10 +180,8 @@ pub async fn restore(uuid: &str) -> Result<Option<Session>> {
             return Ok(Some(session));
         }
     }
-    let refresh_token = match keyring_entry(&format!("{REFRESH_PREFIX}{uuid}"))?.get_password() {
-        Ok(token) => token,
-        Err(keyring::Error::NoEntry) => return Ok(None),
-        Err(e) => return Err(e.into()),
+    let Some(refresh_token) = read_secret(&format!("{REFRESH_PREFIX}{uuid}"))? else {
+        return Ok(None);
     };
     let tokens = request_tokens(&[
         ("client_id", CLIENT_ID),
@@ -198,7 +196,7 @@ pub async fn restore(uuid: &str) -> Result<Option<Session>> {
 /// Retire un compte du coffre du système.
 pub fn logout(uuid: &str) -> Result<()> {
     for account in [format!("{SESSION_PREFIX}{uuid}"), format!("{REFRESH_PREFIX}{uuid}")] {
-        delete_entry(&account)?;
+        delete_secret(&account)?;
     }
     Ok(())
 }
@@ -213,7 +211,7 @@ pub fn migrate_legacy() -> Result<Option<Session>> {
     };
     let Some(session) = session else { return Ok(None) };
     if let Ok(refresh) = keyring_entry(LEGACY_REFRESH)?.get_password() {
-        keyring_entry(&format!("{REFRESH_PREFIX}{}", session.profile.uuid))?.set_password(&refresh)?;
+        write_secret(&format!("{REFRESH_PREFIX}{}", session.profile.uuid), &refresh)?;
     }
     store_session(&session)?;
     delete_entry(LEGACY_SESSION)?;
@@ -247,7 +245,7 @@ fn store_session(session: &Session) -> Result<()> {
     stripped.profile.skin = None;
     stripped.profile.capes.clear();
     let json = serde_json::to_string(&stripped).expect("session sérialisable");
-    keyring_entry(&format!("{SESSION_PREFIX}{}", session.profile.uuid))?.set_password(&json)?;
+    write_secret(&format!("{SESSION_PREFIX}{}", session.profile.uuid), &json)?;
     Ok(())
 }
 
@@ -257,17 +255,85 @@ fn keyring_entry(account: &str) -> Result<keyring::Entry> {
 
 /// Une session illisible (format d'une ancienne version) est ignorée, pas bloquante.
 fn cached_session(uuid: &str) -> Result<Option<Session>> {
-    match keyring_entry(&format!("{SESSION_PREFIX}{uuid}"))?.get_password() {
-        Ok(json) => Ok(serde_json::from_str(&json).ok()),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(e.into()),
+    Ok(read_secret(&format!("{SESSION_PREFIX}{uuid}"))?.and_then(|json| serde_json::from_str(&json).ok()))
+}
+
+/// Le coffre de Windows limite une entrée à 2 560 octets et `set_password` y écrit en UTF-16 :
+/// un refresh token Microsoft de plus de 1 280 caractères n'y tient pas. Les secrets sont donc
+/// rangés en UTF-8 (`set_secret`) et découpés en morceaux : l'entrée `v2:<clé>` commence par le
+/// nombre de morceaux, les suivants sont sous `v2:<clé>#1`, `v2:<clé>#2`…
+const SECRET_PREFIX: &str = "v2:";
+const CHUNK_BYTES: usize = 2000;
+
+fn split_secret(value: &str) -> Vec<Vec<u8>> {
+    let mut chunks: Vec<Vec<u8>> = value.as_bytes().chunks(CHUNK_BYTES).map(<[u8]>::to_vec).collect();
+    if chunks.is_empty() {
+        chunks.push(Vec::new());
+    }
+    let count = u8::try_from(chunks.len()).expect("secret de moins de 500 Ko");
+    chunks[0].insert(0, count);
+    chunks
+}
+
+fn write_secret(account: &str, value: &str) -> Result<()> {
+    delete_secret(account)?;
+    for (index, chunk) in split_secret(value).iter().enumerate() {
+        keyring_entry(&chunk_key(account, index))?.set_secret(chunk)?;
+    }
+    Ok(())
+}
+
+fn read_secret(account: &str) -> Result<Option<String>> {
+    let first = match keyring_entry(&chunk_key(account, 0))?.get_secret() {
+        Ok(bytes) => bytes,
+        // Entrée écrite par une version précédente, au format texte : lue telle quelle, elle sera
+        // réécrite au nouveau format au prochain enregistrement.
+        Err(keyring::Error::NoEntry) => {
+            return match keyring_entry(account)?.get_password() {
+                Ok(value) => Ok(Some(value)),
+                Err(keyring::Error::NoEntry) => Ok(None),
+                Err(e) => Err(e.into()),
+            };
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let Some((&count, head)) = first.split_first() else { return Ok(None) };
+    let mut bytes = head.to_vec();
+    for index in 1..usize::from(count) {
+        match keyring_entry(&chunk_key(account, index))?.get_secret() {
+            Ok(chunk) => bytes.extend(chunk),
+            // Morceau perdu : le secret est inutilisable, on refera une connexion.
+            Err(keyring::Error::NoEntry) => return Ok(None),
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(String::from_utf8(bytes).ok())
+}
+
+fn delete_secret(account: &str) -> Result<()> {
+    let count = match keyring_entry(&chunk_key(account, 0))?.get_secret() {
+        Ok(first) => first.first().copied().map_or(1, usize::from),
+        Err(keyring::Error::NoEntry) => 1,
+        Err(e) => return Err(e.into()),
+    };
+    for index in 0..count {
+        delete_entry(&chunk_key(account, index))?;
+    }
+    delete_entry(account)
+}
+
+fn chunk_key(account: &str, index: usize) -> String {
+    if index == 0 {
+        format!("{SECRET_PREFIX}{account}")
+    } else {
+        format!("{SECRET_PREFIX}{account}#{index}")
     }
 }
 
 async fn open_session(tokens: MicrosoftTokens) -> Result<Session> {
     let session = minecraft_session(&tokens.access_token).await?;
     // Microsoft fait tourner le refresh token à chaque usage : toujours ranger le dernier.
-    keyring_entry(&format!("{REFRESH_PREFIX}{}", session.profile.uuid))?.set_password(&tokens.refresh_token)?;
+    write_secret(&format!("{REFRESH_PREFIX}{}", session.profile.uuid), &tokens.refresh_token)?;
     store_session(&session)?;
     Ok(session)
 }
@@ -489,6 +555,31 @@ mod tests {
             hyphenate("069a79f444e94726a5befca90e38aaf5"),
             "069a79f4-44e9-4726-a5be-fca90e38aaf5"
         );
+    }
+
+    #[test]
+    fn splits_long_secrets_under_the_windows_limit() {
+        let long = "x".repeat(4500);
+        let chunks = split_secret(&long);
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0][0], 3);
+        assert!(chunks.iter().all(|chunk| chunk.len() <= 2560));
+        let joined: Vec<u8> = chunks[0][1..].iter().chain(chunks[1].iter()).chain(chunks[2].iter()).copied().collect();
+        assert_eq!(String::from_utf8(joined).unwrap(), long);
+        assert_eq!(split_secret(""), vec![vec![1u8]]);
+    }
+
+    /// Aller-retour réel dans le coffre du système (`cargo test -- --ignored`) : écrit puis efface
+    /// une entrée de test.
+    #[test]
+    #[ignore]
+    fn round_trips_a_long_secret_through_the_system_store() {
+        let account = "test:long-secret";
+        let long = "é".repeat(2250);
+        write_secret(account, &long).unwrap();
+        assert_eq!(read_secret(account).unwrap().as_deref(), Some(long.as_str()));
+        delete_secret(account).unwrap();
+        assert_eq!(read_secret(account).unwrap(), None);
     }
 
     #[test]
