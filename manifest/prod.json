@@ -5,11 +5,11 @@
   "server": "play.clovergames.fr",
   "modes": [
     { "id": "lobby", "name": "Lobby" },
-    { "id": "bedwars", "name": "BedWars" },
-    { "id": "practice", "name": "Practice" },
-    { "id": "pvpsoup", "name": "PvPSoup" },
-    { "id": "skypvp", "name": "SkyPvP" },
-    { "id": "creatif", "name": "Créatif" }
+    { "id": "bedwars", "name": "BedWars", "host": "bedwars.play.clovergames.fr" },
+    { "id": "practice", "name": "Practice", "host": "practice.play.clovergames.fr" },
+    { "id": "pvpsoup", "name": "PvPSoup", "host": "pvpsoup.play.clovergames.fr" },
+    { "id": "skypvp", "name": "SkyPvP", "host": "skypvp.play.clovergames.fr" },
+    { "id": "creatif", "name": "Créatif", "host": "creatif.play.clovergames.fr" }
   ],
   "mods": [
     { "slug": "sodium", "category": "performance", "default": true, "description": "Moteur de rendu optimisé : beaucoup plus d'images par seconde." },
