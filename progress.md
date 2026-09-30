@@ -58,4 +58,5 @@
 - Site (`a72229c`, en ligne) : `/api/launcher/news` (`blog_posts`), `/status` (dernier échantillon du cron d'analytique + maintenance), `/votes` (`vote_totals.last_vote_at` du plugin). CLO-270 annulé : les joueurs par serveur existaient déjà côté site.
 - Launcher : `site.rs` + commande `site_feed`, relue toutes les 60 s ; bandeau des votes, article à la une, actualités et joueurs par mode.
 - Quick Play : `modes[].host` dans le manifeste (n°1790759444 publié sur R2, SHA-256 vérifié) ; un clic sur la carte lance `--quickPlayMultiplayer <host>`. DNS `*.play.clovergames.fr` (CNAME, hors proxy Cloudflare) créé. `send-on-join: true` mis sur tous les serveurs par Kaysuto.
-- Reste : `forced_hosts` du proxy FlameCord (accès SFTP au proxy manquant) ; sans eux, un clic sur un mode mène au Lobby.
+- Proxy FlameCord (VPS OVH, tmux) : `forced_hosts` des 5 modes appliqués, sauvegarde `config.yml.bak-20260930`, redémarré à 10:55 UTC sans joueur connecté. Vérifié par ping : chaque sous-domaine répond avec son serveur Paper 26.2.
+- Site : Practice et Créatif affichés hors ligne à cause de leurs anciens ports de jeu dans `analytics_servers` (25562/25567 → RCON 25084/25085, corrigé en base) ; `rcon.end()` non rattrapé corrigé (`f5d13ae`). Le site est sur Coolify, plus sur Vercel.

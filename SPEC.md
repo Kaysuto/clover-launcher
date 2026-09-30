@@ -53,7 +53,7 @@ Autres serveurs, parties solo mises en avant, installations multiples façon Mod
   api.minecraft-   Modrinth (CDN     manifeste signé, binaires du
   services.com     publics)          launcher, images des modes
                                          │
-                          clovergames.fr/api/launcher/* (siteweb, Vercel)
+                          clovergames.fr/api/launcher/* (siteweb, Coolify)
                           actualités · joueurs par mode · maintenance
                                          │
                           MySQL du plugin (statut des serveurs)
@@ -73,7 +73,7 @@ Crates prévues : `reqwest` (rustls), `tokio`, `serde`, `sha1`/`sha2`, `keyring`
 2. Microsoft → Xbox Live → XSTS → `login_with_xbox` → `entitlements/mcstore` → profil. Même chaîne que `siteweb/src/lib/minecraft-auth.ts`.
 3. Refresh token Microsoft stocké dans le coffre du système : Gestionnaire d'identification Windows, Trousseau macOS, Secret Service sous Linux. Jamais en clair sur le disque.
 
-**Réutilisation de l'app Azure du site** : l'approbation Mojang est attachée à l'ID de l'application. On ajoute à la même app une plateforme « Applications mobiles et de bureau » (redirection `http://localhost`) et on active les flux clients publics. Le secret du site reste côté Vercel. À vérifier au prototype : `login_with_xbox` doit répondre 200 depuis le launcher.
+**Réutilisation de l'app Azure du site** : l'approbation Mojang est attachée à l'ID de l'application. On ajoute à la même app une plateforme « Applications mobiles et de bureau » (redirection `http://localhost`) et on active les flux clients publics. Le secret du site reste dans les variables du site (Coolify). À vérifier au prototype : `login_with_xbox` doit répondre 200 depuis le launcher.
 
 **Preuve d'identité envers le site (V2)** : le launcher n'envoie jamais son jeton Minecraft à Clover. Il appelle `sessionserver.mojang.com/session/minecraft/join` avec un nonce fourni par le site, puis le site vérifie via `hasJoined`, le mécanisme d'authentification des serveurs Minecraft. Le site délivre alors un jeton launcher court, lié à `users_meta.minecraft_uuid`.
 
@@ -160,7 +160,7 @@ Chaque réponse porte `schema: 1` ; ne changer la forme qu'en incrémentant ce n
 Un mode dont l'entrée du manifeste porte `host` (ex. `bedwars.play.clovergames.fr`) devient cliquable : le launcher lance `--quickPlayMultiplayer <host>`. Sans `host`, la carte reste informative et le joueur passe par le Lobby. Activer un mode demande, dans l'ordre :
 
 1. DNS : `*.play.clovergames.fr` vers la même cible que `play.clovergames.fr` (hors proxy Cloudflare).
-2. Proxy FlameCord : `forced_hosts` associe chaque adresse à son serveur (`bedwars.play.clovergames.fr: bedwars`). Un forced host ne joue qu'à la connexion initiale ; un serveur éteint renvoie vers `priorities` (Lobby).
+2. Proxy FlameCord (VPS OVH, `/srv/flamecord/config.yml`, session tmux `flamecord`) : `forced_hosts` associe chaque adresse à son serveur (`bedwars.play.clovergames.fr: bedwars`). Lu au démarrage seulement : redémarrer le proxy après modification. Un forced host ne joue qu'à la connexion initiale ; un serveur éteint renvoie vers `priorities` (Lobby).
 3. Plugin : `pack.send-on-join: true` sur le backend cible, sinon un joueur arrivé sans passer par le Lobby n'a pas le resource pack. `ContentPackListener` évite déjà le renvoi aux joueurs transférés depuis un autre serveur Clover.
 4. Manifeste : ajouter `host` au mode, puis publier.
 
