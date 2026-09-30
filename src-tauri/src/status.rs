@@ -7,7 +7,7 @@ use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-const TIMEOUT: Duration = Duration::from_secs(4);
+const TIMEOUT: Duration = Duration::from_secs(6);
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ServerStatus {
@@ -88,6 +88,15 @@ async fn read_varint(stream: &mut TcpStream) -> std::io::Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Ping réel du serveur (`cargo test -- --ignored`).
+    #[tokio::test]
+    #[ignore]
+    async fn pings_the_real_server() {
+        let result = tokio::time::timeout(TIMEOUT, query("play.clovergames.fr", 25565)).await;
+        println!("{result:?}");
+        assert!(matches!(result, Ok(Ok(ServerStatus { online: true, .. }))));
+    }
 
     #[test]
     fn encodes_varints_like_minecraft() {

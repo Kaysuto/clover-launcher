@@ -33,6 +33,8 @@ const STORAGE_COLORS: Record<string, string> = {
 };
 
 const SERVER_POLL_MS = 60_000;
+/** Après un échec (souvent le premier ping, lancé pendant le démarrage), on réessaie plus vite. */
+const SERVER_RETRY_MS = 8_000;
 
 type Phase = "loading" | "onboarding-accounts" | "onboarding-done" | "signin" | "app";
 
@@ -124,10 +126,19 @@ export default function App() {
   // ── Statut du serveur ──
   useEffect(() => {
     if (!catalogue) return;
-    const ping = () => api.serverStatus(catalogue.server.host).then(setServer);
+    let cancelled = false;
+    let timer: number | undefined;
+    const ping = async () => {
+      const status = await api.serverStatus(catalogue.server.host).catch(() => null);
+      if (cancelled) return;
+      if (status) setServer(status);
+      timer = window.setTimeout(ping, status?.online ? SERVER_POLL_MS : SERVER_RETRY_MS);
+    };
     ping();
-    const timer = window.setInterval(ping, SERVER_POLL_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [catalogue]);
 
   // ── Apparence : taille de l'interface et animations ──
