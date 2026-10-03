@@ -30,7 +30,7 @@ pub fn usage(root: &Path) -> Usage {
         Part { id: "assets", label: "Ressources du jeu", bytes: size(&[root.join("assets")]) },
         Part { id: "java", label: "Java", bytes: size(&[root.join("runtimes")]) },
         Part { id: "minecraft", label: "Minecraft et bibliothèques", bytes: size(&[root.join("libraries"), root.join("versions"), root.join("natives")]) },
-        Part { id: "mods", label: "Mods", bytes: size(&[game.join("mods")]) },
+        Part { id: "mods", label: "Mods", bytes: size(&[game.join("mods"), root.join("personal-mods")]) },
         Part { id: "worlds", label: "Mondes solo", bytes: size(&[game.join("saves")]) },
         Part { id: "screenshots", label: "Captures d'écran", bytes: size(&[game.join("screenshots")]) },
     ];

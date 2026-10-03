@@ -1,10 +1,13 @@
-import { FileUp, RefreshCw, ShieldAlert, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { FileUp, RefreshCw, Search, ShieldAlert, Trash2 } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { Switch } from "@/components/ui/switch";
 import { secondaryButton } from "@/lib/buttons";
 import { cn } from "@/lib/utils";
-import type { ModCategory, ModInfo, PersonalMod } from "@/types";
+import { ModIcon } from "@/components/ModIcon";
+import { ModPage } from "@/screens/ModPage";
+import { ModrinthDialog } from "@/screens/ModrinthDialog";
+import type { ModCategory, ModInfo, ModrinthPage, ModrinthProject, PersonalMod } from "@/types";
 
 const CATEGORIES: { id: ModCategory; title: string; hint: string }[] = [
   { id: "performance", title: "Performance", hint: "Plus d'images par seconde, moins de mémoire. Activés par défaut." },
@@ -13,6 +16,8 @@ const CATEGORIES: { id: ModCategory; title: string; hint: string }[] = [
 ];
 
 export type ModsView = "catalogue" | "personal";
+/** Mod dont la page est ouverte, par son identifiant dans la liste correspondante. */
+export type OpenMod = { list: ModsView; id: string };
 
 type Props = {
   view: ModsView;
@@ -26,18 +31,40 @@ type Props = {
   onUpdatePersonal: (id: string) => void;
   onRemovePersonal: (id: string) => void;
   onAddFiles: (files: File[]) => void;
+  /** Recherche Modrinth, installation d'un mod trouvé dans « Mes mods », page d'un mod. */
+  modrinth: {
+    search: (query: string, offset: number) => Promise<ModrinthPage>;
+    onInstall: (projectId: string) => Promise<void>;
+    project: (projectId: string) => Promise<ModrinthProject>;
+  };
+  onOpenLink: (url: string) => void;
+  /** Page ouverte au premier rendu (maquettes). */
+  defaultOpen?: OpenMod;
 };
+
+type ListProps = Props & { onOpen: (open: OpenMod) => void };
 
 /** Un mod personnel ne peut être activé que s'il est fait pour Fabric et pour la version du serveur. */
 const usable = (mod: PersonalMod) => mod.status.kind === "ok";
 
 export function ModsScreen(props: Props) {
   const { view, mods, personal } = props;
+  const [open, setOpen] = useState<OpenMod | null>(props.defaultOpen ?? null);
+  const main = useRef<HTMLElement>(null);
   const catalogueOn = mods.filter((mod) => mod.enabled && mod.available).length;
   const personalOn = (personal ?? []).filter((mod) => mod.enabled && usable(mod)).length;
 
+  useEffect(() => {
+    main.current?.scrollTo({ top: 0 });
+  }, [open]);
+
+  // Un mod retiré entre-temps n'a plus de page : la liste revient d'elle-même.
+  const page = open && <Detail {...props} open={open} onBack={() => setOpen(null)} />;
+
   return (
-    <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-12 pt-8 pb-10">
+    <main ref={main} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-12 pt-8 pb-10">
+      {page || (
+      <>
       <header className="flex flex-col gap-2">
         <h1 className="font-display text-[30px] leading-none">Mods</h1>
         <p className="text-sm text-muted-foreground">Ils s'appliquent au prochain lancement.</p>
@@ -69,12 +96,103 @@ export function ModsScreen(props: Props) {
       </div>
       )}
 
-      {view === "catalogue" || !personal ? <Catalogue {...props} /> : <Personal {...props} personal={personal} />}
+      {view === "catalogue" || !personal ? <Catalogue {...props} onOpen={setOpen} /> : <Personal {...props} onOpen={setOpen} personal={personal} />}
+      </>
+      )}
     </main>
   );
 }
 
-function Catalogue({ mods, minecraftVersion, onToggle }: Props) {
+/** Fond d'une carte de mod : bouton qui ouvre sa page, ou simple fond s'il n'en a pas. */
+function CardBack({ name, onOpen, className }: { name: string; onOpen?: () => void; className?: string }) {
+  const base = cn("absolute inset-0 rounded-lg border border-border bg-card", className);
+  return onOpen ? (
+    <button type="button" onClick={onOpen} aria-label={`Ouvrir la page de ${name}`} className={cn(base, "transition-colors hover:bg-[#241f19]")} />
+  ) : (
+    <span aria-hidden className={base} />
+  );
+}
+
+function Detail({ open, onBack, mods, personal, minecraftVersion, onToggle, onTogglePersonal, onUpdatePersonal, onRemovePersonal, modrinth, onOpenLink }: Props & { open: OpenMod; onBack: () => void }) {
+  const shared = { load: modrinth.project, onBack, onOpenLink };
+
+  if (open.list === "catalogue") {
+    const mod = mods.find((other) => other.id === open.id);
+    if (!mod) return null;
+    return (
+      <ModPage
+        {...shared}
+        project={mod.id}
+        name={mod.name}
+        icon={mod.icon}
+        version={mod.available ? mod.version : null}
+        summary={mod.description}
+        notice={!mod.available && <Notice tone="error">Pas encore disponible pour Minecraft {minecraftVersion}.</Notice>}
+        actions={<PageSwitch id={mod.id} on={mod.available && mod.enabled} disabled={!mod.available} onChange={(checked) => onToggle(mod.id, checked)} />}
+      />
+    );
+  }
+
+  const mod = personal?.find((other) => other.id === open.id);
+  if (!mod?.projectId) return null;
+  const text = statusText(mod, minecraftVersion);
+  return (
+    <ModPage
+      {...shared}
+      project={mod.projectId}
+      name={mod.name}
+      icon={null}
+      version={mod.version}
+      notice={text && <Notice tone={mod.status.kind === "update" ? "accent" : "error"}>{text}</Notice>}
+      actions={
+        <>
+          {mod.status.kind === "update" && (
+            <button type="button" onClick={() => onUpdatePersonal(mod.id)} className={secondaryButton}>
+              <RefreshCw className="size-4" aria-hidden />
+              Mettre à jour
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              onRemovePersonal(mod.id);
+              onBack();
+            }}
+            className={cn(secondaryButton, "hover:text-destructive")}
+          >
+            <Trash2 className="size-4" aria-hidden />
+            Retirer
+          </button>
+          <PageSwitch id={mod.id} on={mod.enabled && usable(mod)} disabled={!usable(mod)} onChange={(checked) => onTogglePersonal(mod.id, checked)} />
+        </>
+      }
+    />
+  );
+}
+
+function PageSwitch({ id, on, disabled, onChange }: { id: string; on: boolean; disabled: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label htmlFor={`page-${id}`} className="ml-2 flex items-center gap-2.5 text-[13px] font-semibold">
+      {on ? "Activé" : "Désactivé"}
+      <Switch id={`page-${id}`} checked={on} disabled={disabled} onCheckedChange={onChange} />
+    </label>
+  );
+}
+
+function Notice({ tone, children }: { tone: "accent" | "error"; children: ReactNode }) {
+  return (
+    <p
+      className={cn(
+        "mt-5 rounded-lg border px-4 py-3 text-[13px] leading-relaxed",
+        tone === "accent" ? "border-accent/30 bg-accent/8 text-accent" : "border-[#f3a19e]/30 bg-[#f3a19e]/8 text-[#f3a19e]",
+      )}
+    >
+      {children}
+    </p>
+  );
+}
+
+function Catalogue({ mods, minecraftVersion, onToggle, onOpen }: ListProps) {
   return (
     <>
       <p className="mt-4 text-sm text-muted-foreground">Chaque mod du catalogue est vérifié par l'équipe Clover Games et mis à jour avec le serveur.</p>
@@ -91,7 +209,10 @@ function Catalogue({ mods, minecraftVersion, onToggle }: Props) {
             </div>
             <ul className="grid grid-cols-[repeat(auto-fill,minmax(340px,1fr))] gap-2.5">
               {items.map((mod) => (
-                <li key={mod.id} className={cn("flex gap-4 rounded-lg border border-border bg-card px-4 py-3.5", !mod.available && "opacity-55")}>
+                <li key={mod.id} className={cn("relative flex gap-4 px-4 py-3.5", !mod.available && "opacity-55")}>
+                  <CardBack name={mod.name} onOpen={() => onOpen({ list: "catalogue", id: mod.id })} />
+                  <div className="pointer-events-none relative flex min-w-0 flex-1 gap-4">
+                  <ModIcon src={mod.icon} />
                   <div className="flex min-w-0 flex-1 flex-col gap-1">
                     <label htmlFor={`mod-${mod.id}`} className="text-sm font-semibold">
                       {mod.name}
@@ -101,9 +222,10 @@ function Catalogue({ mods, minecraftVersion, onToggle }: Props) {
                     </p>
                     {mod.available && mod.version && <p className="truncate font-pixel text-[10px] text-muted-foreground/70">{mod.version}</p>}
                   </div>
+                  </div>
                   <Switch
                     id={`mod-${mod.id}`}
-                    className="mt-0.5"
+                    className="relative mt-0.5"
                     checked={mod.available && mod.enabled}
                     disabled={!mod.available}
                     onCheckedChange={(checked) => onToggle(mod.id, checked)}
@@ -131,9 +253,10 @@ function statusText(mod: PersonalMod, minecraftVersion: string) {
   }
 }
 
-function Personal({ personal, minecraftVersion, onTogglePersonal, onUpdatePersonal, onRemovePersonal, onAddFiles }: Props & { personal: PersonalMod[] }) {
+function Personal({ personal, minecraftVersion, onTogglePersonal, onUpdatePersonal, onRemovePersonal, onAddFiles, modrinth, onOpen }: ListProps & { personal: PersonalMod[] }) {
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [searching, setSearching] = useState(false);
   const blocked = personal.filter((mod) => !usable(mod)).length;
 
   return (
@@ -163,10 +286,16 @@ function Personal({ personal, minecraftVersion, onTogglePersonal, onUpdatePerson
           {personal.length} mod{personal.length > 1 ? "s" : ""}
           {blocked > 0 && ` · ${blocked} ne peu${blocked > 1 ? "vent" : "t"} pas être chargé${blocked > 1 ? "s" : ""} en ${minecraftVersion}`}
         </p>
-        <button type="button" onClick={() => input.current?.click()} className={secondaryButton}>
-          <FileUp className="size-4" aria-hidden />
-          Ajouter des mods (.jar)
-        </button>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setSearching(true)} className={secondaryButton}>
+            <Search className="size-4" aria-hidden />
+            Rechercher un mod
+          </button>
+          <button type="button" onClick={() => input.current?.click()} className={secondaryButton}>
+            <FileUp className="size-4" aria-hidden />
+            Ajouter des .jar
+          </button>
+        </div>
         <input
           ref={input}
           type="file"
@@ -184,21 +313,27 @@ function Personal({ personal, minecraftVersion, onTogglePersonal, onUpdatePerson
       {personal.length === 0 ? (
         <div className={cn("mt-4 grid place-items-center rounded-lg border-2 border-dashed border-border px-6 py-12 text-center", dragging && "border-accent bg-accent/5")}>
           <p className="text-sm font-semibold">Aucun mod personnel</p>
-          <p className="mt-1 text-xs text-muted-foreground">Glisse des fichiers .jar ici, ou importe-les depuis un autre launcher dans les paramètres.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Recherche-les, glisse des fichiers .jar ici, ou importe-les depuis un autre launcher dans les paramètres.</p>
         </div>
       ) : (
         <ul className={cn("mt-4 flex flex-col gap-2 rounded-lg", dragging && "outline-2 outline-offset-4 outline-accent outline-dashed")}>
           {personal.map((mod) => {
             const text = statusText(mod, minecraftVersion);
             return (
-              <li key={mod.id} className={cn("flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3", !usable(mod) && "bg-[#17150f]")}>
+              <li key={mod.id} className="relative flex items-center gap-4 px-4 py-3">
+                <CardBack
+                  name={mod.name}
+                  onOpen={mod.projectId ? () => onOpen({ list: "personal", id: mod.id }) : undefined}
+                  className={cn(!usable(mod) && "bg-[#17150f]")}
+                />
                 <Switch
+                  className="relative"
                   id={`personal-${mod.id}`}
                   checked={mod.enabled && usable(mod)}
                   disabled={!usable(mod)}
                   onCheckedChange={(checked) => onTogglePersonal(mod.id, checked)}
                 />
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <div className={cn("relative flex min-w-0 flex-1 flex-col gap-0.5", mod.projectId && "pointer-events-none")}>
                   <label htmlFor={`personal-${mod.id}`} className={cn("flex items-baseline gap-2 text-sm font-semibold", !usable(mod) && "text-muted-foreground")}>
                     {mod.name}
                     {mod.version && <span className="truncate font-pixel text-[10px] font-normal text-muted-foreground/70">{mod.version}</span>}
@@ -207,7 +342,7 @@ function Personal({ personal, minecraftVersion, onTogglePersonal, onUpdatePerson
                   <p className="truncate text-[11px] text-muted-foreground">{mod.source ?? mod.filename}</p>
                 </div>
                 {mod.status.kind === "update" && (
-                  <button type="button" onClick={() => onUpdatePersonal(mod.id)} className={secondaryButton}>
+                  <button type="button" onClick={() => onUpdatePersonal(mod.id)} className={cn(secondaryButton, "relative")}>
                     <RefreshCw className="size-4" aria-hidden />
                     Mettre à jour
                   </button>
@@ -217,7 +352,7 @@ function Personal({ personal, minecraftVersion, onTogglePersonal, onUpdatePerson
                   onClick={() => onRemovePersonal(mod.id)}
                   aria-label={`Retirer ${mod.name}`}
                   title="Retirer"
-                  className="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-destructive"
+                  className="relative grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-destructive"
                 >
                   <Trash2 className="size-4" aria-hidden />
                 </button>
@@ -226,6 +361,15 @@ function Personal({ personal, minecraftVersion, onTogglePersonal, onUpdatePerson
           })}
         </ul>
       )}
+
+      <ModrinthDialog
+        open={searching}
+        onOpenChange={setSearching}
+        minecraftVersion={minecraftVersion}
+        installed={new Set(personal.flatMap((mod) => (mod.projectId ? [mod.projectId] : [])))}
+        search={modrinth.search}
+        onInstall={modrinth.onInstall}
+      />
     </div>
   );
 }

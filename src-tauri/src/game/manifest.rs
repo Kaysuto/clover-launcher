@@ -65,7 +65,17 @@ pub struct Mode {
 pub struct Mod {
     pub id: String,
     pub name: String,
+    /// Logo du mod (URL). Absent des manifestes publiés avant son ajout.
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// Version du fichier, affichée sur la carte.
+    #[serde(default)]
+    pub version: Option<String>,
     pub description: Option<String>,
+    /// Description complète en français (Markdown), qui remplace celle de Modrinth sur la page du
+    /// mod. Rendue côté Rust : jamais envoyée telle quelle à l'interface.
+    #[serde(default, skip_serializing)]
+    pub body: Option<String>,
     pub category: Option<String>,
     pub default: bool,
     /// Dépendance ajoutée par le script : jamais affichée, installée avec les mods qui la requièrent.
@@ -237,7 +247,7 @@ mod tests {
         "modes": [{"id": "lobby", "name": "Lobby", "image": null},
                   {"id": "bedwars", "name": "BedWars", "image": null, "host": "bedwars.play.clovergames.fr"}],
         "mods": [
-            {"id": "iris", "name": "Iris", "description": null, "category": "visual", "default": false,
+            {"id": "iris", "name": "Iris", "description": null, "body": "Des **shaders**.", "category": "visual", "default": false,
              "hidden": false, "available": true, "requires": ["sodium"],
              "file": {"filename": "iris.jar", "url": "https://x/iris.jar", "sha512": "00", "size": 1}},
             {"id": "sodium", "name": "Sodium", "description": null, "category": "performance", "default": true,
@@ -261,6 +271,8 @@ mod tests {
         let signature = signed(&key, MANIFEST.as_bytes());
         let manifest = verify_with(&key.verifying_key(), MANIFEST.as_bytes(), &signature).unwrap();
         assert_eq!(manifest.minecraft.version, "26.2");
+        assert_eq!(manifest.mods[0].body.as_deref(), Some("Des **shaders**."));
+        assert!(manifest.mods[1].body.is_none());
     }
 
     #[test]

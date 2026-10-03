@@ -2,6 +2,7 @@ import { FolderOpen, Gamepad2, HardDrive, Info, Palette, Plug, Plus, RotateCcw, 
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { RemoveAccountButton } from "@/components/AccountMenu";
 import { DiscordLogo } from "@/components/DiscordLogo";
 import { PlayerHead } from "@/components/PlayerHead";
 import { Slider } from "@/components/ui/slider";
@@ -194,9 +195,7 @@ function General({ settings, onChange, accounts, onUseAccount, onRemoveAccount, 
                   Utiliser
                 </button>
               )}
-              <button type="button" onClick={() => onRemoveAccount(profile.uuid)} className="text-xs font-semibold text-muted-foreground hover:text-destructive">
-                Retirer
-              </button>
+              <RemoveAccountButton name={profile.name} onClick={() => onRemoveAccount(profile.uuid)} />
             </li>
           ))}
         </ul>

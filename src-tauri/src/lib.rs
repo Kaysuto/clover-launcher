@@ -44,6 +44,16 @@ impl AppState {
         stored.save(&self.path).map_err(|e| format!("Impossible d'enregistrer les réglages : {e}"))?;
         Ok(result)
     }
+
+    /// Retient un serveur rejoint en jeu ; n'écrit le fichier que si l'historique change.
+    fn remember_server(&self, server: store::RecentServer) {
+        let mut stored = self.stored.lock().expect("réglages");
+        if stored.remember_server(server) {
+            if let Err(e) = stored.save(&self.path) {
+                eprintln!("[store] serveur récent non enregistré : {e}");
+            }
+        }
+    }
 }
 
 fn account_ref(profile: &auth::Profile) -> store::AccountRef {
@@ -143,7 +153,7 @@ async fn get_catalogue(app: AppHandle) -> Result<game::manifest::Manifest, game:
 
 #[tauri::command]
 async fn server_status(host: String) -> status::ServerStatus {
-    status::ping(&host, 25565).await
+    status::ping(&host).await
 }
 
 #[tauri::command]
@@ -190,13 +200,17 @@ fn open_game_dir(app: AppHandle, state: State<'_, AppState>) -> Result<(), Strin
     app.opener().open_path(game.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
 }
 
-/// Dernières lignes de la sortie du jeu, pour l'écran de plantage.
+/// Sortie du jeu après l'entrée `after` (0 : tout ce qui est gardé), pour la console et l'écran
+/// de plantage.
 #[tauri::command]
-fn game_log_tail(state: State<'_, AppState>) -> String {
-    let text = std::fs::read_to_string(state.root.join("logs").join("game-output.log")).unwrap_or_default();
-    let lines: Vec<&str> = text.lines().collect();
-    lines[lines.len().saturating_sub(40)..].join("
-")
+fn game_console(after: u64, console: State<'_, game::console::Console>) -> game::console::Snapshot {
+    console.since(after)
+}
+
+/// Bouton « Effacer » de la console ; `logs/game-output.log` reste complet.
+#[tauri::command]
+fn clear_game_console(console: State<'_, game::console::Console>) {
+    console.clear();
 }
 
 #[tauri::command]
@@ -235,8 +249,92 @@ fn add_skin(bytes: Vec<u8>, name: String, model: String, state: State<'_, AppSta
 }
 
 #[tauri::command]
+fn rename_skin(id: String, name: String, state: State<'_, AppState>) -> Result<String, skins::SkinError> {
+    skins::rename(&state.root, &id, &name)
+}
+
+#[tauri::command]
 fn remove_skin(id: String, state: State<'_, AppState>) -> Result<(), skins::SkinError> {
     skins::remove(&state.root, &id)
+}
+
+#[tauri::command]
+async fn list_personal_mods(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<game::personal::PersonalMod>, game::GameError> {
+    let paths = game::Paths::new(&app)?;
+    let manifest = game::catalogue(&app).await?;
+    let disabled = state.snapshot().disabled_personal_mods;
+    Ok(game::personal::list(&game::download::client(), &paths.personal_mods, &disabled, &manifest.minecraft.version).await)
+}
+
+/// Recherche de mods Fabric sur Modrinth, pour la version de Minecraft du serveur.
+#[tauri::command]
+async fn search_modrinth(query: String, offset: u32, app: AppHandle) -> Result<game::modrinth::SearchPage, game::GameError> {
+    let manifest = game::catalogue(&app).await?;
+    game::modrinth::search(&game::download::client(), &query, &manifest.minecraft.version, offset).await
+}
+
+/// Page Modrinth d'un mod du catalogue ou de « Mes mods ». Si le catalogue a une description en
+/// français pour ce mod, elle remplace celle de Modrinth.
+#[tauri::command]
+async fn modrinth_project(project: String, app: AppHandle) -> Result<game::modrinth::Project, game::GameError> {
+    let mut page = game::modrinth::project(&game::download::client(), &project).await?;
+    let manifest = game::catalogue(&app).await.ok();
+    if let Some(body) = manifest.as_ref().and_then(|manifest| manifest.mods.iter().find(|m| m.id == page.slug)).and_then(|m| m.body.as_deref()) {
+        page.description_html = game::modrinth::description_html(body);
+    }
+    Ok(page)
+}
+
+/// Installe un mod trouvé sur Modrinth (et ses dépendances) dans « Mes mods ».
+#[tauri::command]
+async fn install_modrinth_mod(project: String, app: AppHandle) -> Result<Vec<String>, game::GameError> {
+    let paths = game::Paths::new(&app)?;
+    let manifest = game::catalogue(&app).await?;
+    game::personal::install(&game::download::client(), &paths.personal_mods, &project, &manifest.minecraft.version).await
+}
+
+/// Corps brut : les octets du `.jar` ; en-tête `x-filename` : son nom, encodé pour l'URL.
+#[tauri::command]
+fn add_personal_mod(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<(), game::GameError> {
+    let name = request
+        .headers()
+        .get("x-filename")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|encoded| url::form_urlencoded::parse(format!("n={encoded}").as_bytes()).next().map(|(_, name)| name.into_owned()))
+        .unwrap_or_default();
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err(game::GameError::NotAMod(name)) };
+    game::personal::add(&game::Paths::new(&app)?.personal_mods, &name, bytes)
+}
+
+#[tauri::command]
+fn remove_personal_mod(id: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    game::personal::remove(&game::Paths::new(&app).map_err(|e| e.to_string())?.personal_mods, &id).map_err(|e| e.to_string())?;
+    state.update(|stored| stored.disabled_personal_mods.retain(|name| *name != id))
+}
+
+#[tauri::command]
+fn set_personal_mod_enabled(id: String, enabled: bool, state: State<'_, AppState>) -> Result<(), String> {
+    state.update(|stored| {
+        stored.disabled_personal_mods.retain(|name| *name != id);
+        if !enabled {
+            stored.disabled_personal_mods.push(id);
+        }
+    })
+}
+
+/// Remplace un mod du joueur par sa version pour Minecraft du serveur, trouvée sur Modrinth.
+#[tauri::command]
+async fn update_personal_mod(id: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let paths = game::Paths::new(&app).map_err(|e| e.to_string())?;
+    let manifest = game::catalogue(&app).await.map_err(|e| e.to_string())?;
+    let http = game::download::client();
+    let new = game::personal::update(&http, &paths.personal_mods, &id, &manifest.minecraft.version).await.map_err(|e| e.to_string())?;
+    // Le nouveau fichier garde l'état activé ou désactivé de l'ancien.
+    state.update(|stored| {
+        for name in stored.disabled_personal_mods.iter_mut().filter(|name| **name == id) {
+            name.clone_from(&new);
+        }
+    })
 }
 
 /// Applique un skin (et une cape) au compte actif ; seul appel à l'API de skins de Mojang.
@@ -264,20 +362,32 @@ async fn play(
     current: State<'_, CurrentSession>,
     presence: State<'_, Presence>,
     mode: Option<String>,
+    server: Option<String>,
 ) -> Result<(), game::GameError> {
     let session = current.0.lock().await.clone().ok_or(game::GameError::NotSignedIn)?;
-    let settings = state.snapshot().settings;
+    let stored = state.snapshot();
+    // L'interface ne propose que des serveurs du journal Quick Play : rien d'autre n'est lancé.
+    let destination = match server {
+        Some(address) if stored.recent_servers.iter().any(|known| known.address == address) => game::Destination::Server(address),
+        Some(_) => return Err(game::GameError::UnknownServer),
+        None => game::Destination::Mode(mode),
+    };
+    let clover = matches!(destination, game::Destination::Mode(_));
+    let settings = stored.settings;
     let options = game::LaunchOptions {
         memory_mb: (!settings.memory_auto).then(|| u64::from(settings.memory_gb) * 1024),
         java_args: settings.java_args.split_whitespace().map(str::to_owned).collect(),
         fullscreen: settings.fullscreen,
         enabled_mods: settings.enabled_mods.as_ref().map(|mods| mods.iter().cloned().collect()),
+        disabled_personal_mods: stored.disabled_personal_mods,
     };
-    game::play(&app, &session, options, mode.as_deref())
+    let handle = app.clone();
+    let on_join = move |server| handle.state::<AppState>().remember_server(server);
+    game::play(&app, &session, options, destination, on_join)
         .await
         .inspect(|()| eprintln!("[game] Minecraft lancé"))
         .inspect_err(|e| eprintln!("[game] échec du lancement : {e}"))?;
-    presence.set_state(presence::State::playing_now()).await;
+    presence.set_state(presence::State::playing_now(clover)).await;
 
     if let Some(window) = app.get_webview_window("main") {
         match settings.on_launch.as_str() {
@@ -312,11 +422,19 @@ pub fn run() {
         .manage(CurrentSession::default())
         .manage(Presence::default())
         .setup(|app| {
-            let root = game::Paths::new(app.handle())?.root;
+            let paths = game::Paths::new(app.handle())?;
+            let root = paths.root;
             let path = store::path(&root);
-            let stored = store::Stored::load(&path);
+            let mut stored = store::Stored::load(&path);
+            // Partie jouée launcher fermé : son dernier serveur est resté dans le journal du jeu.
+            if let Some(server) = game::quick_play::last_server(&paths.quick_play_log) {
+                if stored.remember_server(server) {
+                    let _ = stored.save(&path);
+                }
+            }
             let discord = stored.settings.discord_presence;
             app.manage(AppState { stored: SyncMutex::new(stored), path, root });
+            app.manage(game::console::Console::resume(&paths.game_output));
 
             // Zone de notification : ouvrir, quitter ; clic sur l'icône = ouvrir.
             let open = MenuItem::with_id(app, "open", "Ouvrir le Clover Launcher", true, None::<&str>)?;
@@ -386,12 +504,22 @@ pub fn run() {
             storage_usage,
             clean_storage,
             open_game_dir,
-            game_log_tail,
+            game_console,
+            clear_game_console,
             open_logs_dir,
             list_skins,
             add_skin,
+            rename_skin,
             remove_skin,
             apply_skin,
+            list_personal_mods,
+            add_personal_mod,
+            remove_personal_mod,
+            set_personal_mod_enabled,
+            update_personal_mod,
+            search_modrinth,
+            modrinth_project,
+            install_modrinth_mod,
             play,
         ])
         .run(tauri::generate_context!())

@@ -22,7 +22,8 @@
         "label": "main",
         "decorations": false,
         "shadow": true,
-        "visible": false
+        "visible": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {

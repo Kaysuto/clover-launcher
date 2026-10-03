@@ -66,6 +66,18 @@ pub struct AccountRef {
     pub skin_url: Option<String>,
 }
 
+/// Serveur rejoint en jeu, d'après le journal Quick Play de Minecraft (`game::quick_play`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecentServer {
+    pub address: String,
+    /// Nom donné dans la liste des serveurs du jeu, ou nom par défaut pour une connexion directe.
+    pub name: String,
+}
+
+/// Assez pour que les serveurs Clover Games (Lobby, modes), filtrés par l'accueil, ne chassent pas
+/// les autres de l'historique.
+const RECENT_SERVERS: usize = 16;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Stored {
@@ -74,6 +86,10 @@ pub struct Stored {
     pub active_account: Option<String>,
     /// Premier lancement terminé.
     pub onboarded: bool,
+    /// Fichiers de « Mes mods » désactivés ; un mod ajouté est activé d'office.
+    pub disabled_personal_mods: Vec<String>,
+    /// Serveurs rejoints en jeu, du plus récent au plus ancien.
+    pub recent_servers: Vec<RecentServer>,
 }
 
 impl Stored {
@@ -111,6 +127,17 @@ impl Stored {
             self.active_account = self.accounts.first().map(|account| account.uuid.clone());
         }
     }
+
+    /// Place `server` en tête des serveurs récents ; `false` s'il y était déjà (rien à enregistrer).
+    pub fn remember_server(&mut self, server: RecentServer) -> bool {
+        if self.recent_servers.first() == Some(&server) {
+            return false;
+        }
+        self.recent_servers.retain(|known| known.address != server.address);
+        self.recent_servers.insert(0, server);
+        self.recent_servers.truncate(RECENT_SERVERS);
+        true
+    }
 }
 
 pub fn path(root: &Path) -> PathBuf {
@@ -135,6 +162,21 @@ mod tests {
         assert_eq!(stored.active_account.as_deref(), Some("b"));
         stored.remove_account("b");
         assert_eq!(stored.active_account, None);
+    }
+
+    #[test]
+    fn remembered_server_moves_to_front_once() {
+        let server = |address: &str| RecentServer { address: address.into(), name: "Serveur Minecraft".into() };
+        let mut stored = Stored::default();
+        assert!(stored.remember_server(server("a")));
+        assert!(stored.remember_server(server("b")));
+        assert!(!stored.remember_server(server("b")));
+        assert!(stored.remember_server(server("a")));
+        assert_eq!(stored.recent_servers, [server("a"), server("b")]);
+        for index in 0..RECENT_SERVERS + 4 {
+            stored.remember_server(server(&index.to_string()));
+        }
+        assert_eq!(stored.recent_servers.len(), RECENT_SERVERS);
     }
 
     #[test]

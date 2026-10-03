@@ -14,13 +14,14 @@ const number = new Intl.NumberFormat("fr-FR");
 type Props = {
   state: PlayState;
   onPlay: () => void;
+  onOpenConsole: () => void;
   /** Sous « Jouer » : la version qui sera lancée, par exemple « Minecraft 26.2 · Fabric ». */
   version: string;
   /** Petite dalle à droite : changement de version. */
   picker: ReactNode;
 };
 
-export function PlayButton({ state, onPlay, version, picker }: Props) {
+export function PlayButton({ state, onPlay, onOpenConsole, version, picker }: Props) {
   const progress = state.kind === "installing" ? state.progress : undefined;
   const ratio = progress && progress.total > 0 ? progress.done / progress.total : 0;
 
@@ -47,7 +48,14 @@ export function PlayButton({ state, onPlay, version, picker }: Props) {
             {PHASES[progress.phase]} · <span className="font-pixel text-[11px]">{number.format(progress.done)}/{number.format(progress.total)}</span>
           </>
         )}
-        {state.kind === "running" && "Minecraft est ouvert. Ferme le jeu pour relancer."}
+        {state.kind === "running" && (
+          <>
+            Minecraft est ouvert.{" "}
+            <button type="button" onClick={onOpenConsole} className="font-bold text-accent underline-offset-2 hover:underline">
+              Voir la console
+            </button>
+          </>
+        )}
         {state.kind === "ready" && state.error && <span className="text-[#ffb3b0]">{state.error}</span>}
       </p>
     </div>

@@ -38,6 +38,9 @@ discord-rich-presence = "1.1.0"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 tauri-plugin-autostart = "2.6.0"
 tauri-plugin-single-instance = "2.5.1"
+hickory-resolver = "0.26"
+ammonia = "4.2.1"
+pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

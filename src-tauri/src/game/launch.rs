@@ -1,13 +1,24 @@
 //! Construction de la ligne de commande et démarrage du jeu.
 
+use std::io::LineWriter;
 use std::process::Stdio;
+use std::time::Duration;
 
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
+use super::console::{self, Console};
 use super::install::Installation;
+use super::quick_play;
 use super::version::expand;
 use super::{auto_memory_mb, GameError, LaunchOptions, Paths, Result};
 use crate::auth::Session;
+use crate::store::RecentServer;
+
+/// Le jeu remplace son journal Quick Play à chaque connexion : le relire assez souvent pour ne
+/// manquer aucun serveur rejoint pendant la partie.
+const QUICK_PLAY_POLL: Duration = Duration::from_secs(5);
+/// Attente de la fin de la sortie une fois le jeu fermé.
+const OUTPUT_GRACE: Duration = Duration::from_secs(3);
 
 pub async fn spawn(
     app: &AppHandle,
@@ -16,6 +27,7 @@ pub async fn spawn(
     session: &Session,
     server: &str,
     options: &LaunchOptions,
+    on_join: impl Fn(RecentServer) + Send + 'static,
 ) -> Result<()> {
     let Installation { java, vanilla, loader, classpath, logging_argument } = installation;
     let natives = paths.natives.join(&loader.id);
@@ -41,8 +53,9 @@ pub async fn spawn(
         ("launcher_name", "clover-launcher".into()),
         ("launcher_version", env!("CARGO_PKG_VERSION").into()),
         ("quickPlayMultiplayer", server.to_owned()),
+        ("quickPlayPath", paths.quick_play_log.to_string_lossy().into_owned()),
     ];
-    let features = ["is_quick_play_multiplayer"];
+    let features = ["is_quick_play_multiplayer", "has_quick_plays_support"];
 
     let main_class = loader
         .main_class
@@ -64,20 +77,45 @@ pub async fn spawn(
 
     tokio::fs::create_dir_all(&paths.game).await?;
     tokio::fs::create_dir_all(&paths.logs).await?;
-    let log = std::fs::File::create(paths.logs.join("game-output.log"))?;
+    // Écrit ligne par ligne : le fichier reste à jour pendant la partie.
+    let output = LineWriter::new(std::fs::File::create(&paths.game_output)?);
     let mut child = tokio::process::Command::new(&java)
         .args(&arguments)
         .current_dir(&paths.game)
         .stdin(Stdio::null())
-        .stdout(log.try_clone()?)
-        .stderr(log)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(GameError::Spawn)?;
+    let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
+        unreachable!("sorties du jeu redirigées juste au-dessus");
+    };
 
     let app = app.clone();
+    let log = paths.quick_play_log.clone();
+    let token = session.minecraft_token.clone();
+    app.state::<Console>().start();
     tauri::async_runtime::spawn(async move {
-        let code = child.wait().await.ok().and_then(|status| status.code());
+        let console = app.state::<Console>();
+        let capture = console::capture(&console, stdout, stderr, output, &token);
+        tokio::pin!(capture);
+        let mut captured = false;
+        let mut poll = tokio::time::interval(QUICK_PLAY_POLL);
+        let code = loop {
+            tokio::select! {
+                () = &mut capture, if !captured => captured = true,
+                status = child.wait() => break status.ok().and_then(|status| status.code()),
+                _ = poll.tick() => quick_play::last_server(&log).into_iter().for_each(&on_join),
+            }
+        };
+        // Fin de la sortie lue avant d'annoncer la fermeture : l'écran de plantage la montre. Un
+        // processus lancé par le jeu peut garder ses sorties ouvertes, d'où la limite.
+        if !captured {
+            let _ = tokio::time::timeout(OUTPUT_GRACE, capture).await;
+        }
+        quick_play::last_server(&log).into_iter().for_each(&on_join);
         eprintln!("[game] Minecraft fermé (code {code:?})");
+        console.finish(code);
         let _ = app.emit("game-exited", code);
     });
     Ok(())

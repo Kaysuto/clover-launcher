@@ -11,7 +11,7 @@ msedge --headless=new --window-size=1100,680 --virtual-time-budget=8000 \
 ```
 
 Écrans : `onboarding-first`, `onboarding-accounts`, `onboarding-error`, `onboarding-import`, `onboarding-done`,
-`signin`, `home`, `notifications`, `installing`, `mods`, `mods-personal`, `skins`, `skin-editor`, `settings` (+ `-appearance`, `-game`, `-storage`, `-integrations`, `-about`), `crash`.
+`signin`, `home`, `notifications`, `accounts`, `installing`, `playing`, `mods`, `mods-personal`, `mods-modrinth`, `skins`, `skin-editor`, `console`, `console-live`, `settings` (+ `-appearance`, `-game`, `-storage`, `-integrations`, `-about`), `crash`.
 
 Les icônes des modes, les skins par défaut (`defaults/`), le skin et la cape de démonstration
 sont extraits du client installé ou téléchargés dans `design/placeholder/` (ignoré par git) : ils ne
@@ -41,7 +41,11 @@ images viendront du champ `image` des modes du manifeste.
   le nombre d'objets d'une case, et le cadre de sélection marque le serveur où « Jouer » envoie.
   Contours, cases et boutons reprennent les utilitaires `mc-frame`, `mc-slot` et `mc-bevel` du site.
 - **Navigation** : colonne à gauche (`SideNav`), une case d'inventaire par section (Accueil, Mods,
-  Skins) avec le cadre de sélection du jeu sur la section ouverte.
+  Skins, Console) avec le cadre de sélection du jeu sur la section ouverte.
+- **Console** (inspirée de Modrinth App et Lunar Client) : sortie du jeu en direct, au format de
+  `latest.log`, avertissements en or et erreurs en rouge. Filtres par niveau avec leur compte,
+  recherche, « Copier » (les lignes affichées) ; la liste suit les nouvelles lignes tant qu'on reste
+  en bas, sinon « Dernières lignes » y ramène.
 - **Barre de titre** : monogramme à gauche ; derniers votes, compte,
   paramètres (engrenage) et boutons de fenêtre (réduire, agrandir, fermer) en petits blocs en relief
   à droite.

@@ -17,7 +17,7 @@ Le launcher suit le serveur : la version, les mods et les modes sont décrits da
 | Premier lancement | Trois étapes. **Comptes** : plusieurs comptes Microsoft d'affilée (chacun doit posséder Minecraft Java), un compte principal. **Importer** : installations trouvées dans les autres launchers, une à la fois, avec le choix de ce qu'on reprend (voir 3.5 bis). **Terminé** : récapitulatif, réglages recommandés pour la machine, accord pour les rapports de plantage. |
 | Connexion | Microsoft uniquement, sans écran séparé : l'étape Comptes sert aussi de reconnexion quand plus aucun compte n'est enregistré. Bascule entre comptes en un clic. |
 | Version de Minecraft | La version qui sera lancée est écrite sous « Jouer » (« Minecraft 26.2 · Fabric », « · solo » si elle ne peut pas rejoindre le serveur). À droite du bouton, une dalle avec l'icône d'échange ouvre la liste, sur le modèle du Laby Launcher : la version du serveur en premier, les autres (solo, autres serveurs) avec l'avertissement « Ne peut pas rejoindre Clover Games ». Téléchargement à la demande, version choisie mémorisée. Quand le serveur change de version (manifeste), le launcher repasse d'office sur la nouvelle. |
-| Accueil | Bouton « Jouer » (Quick Play sur `play.clovergames.fr`, arrivée au Lobby). Aperçu 3D du skin du compte actif (façon Laby Launcher). Cartes des 6 modes avec le nombre de joueurs connectés ; un clic lance le jeu directement sur le mode (voir 3.6 bis). Actualités du blog du site. Bandeau de maintenance. |
+| Accueil | Bouton « Jouer » (Quick Play sur `play.clovergames.fr`, arrivée au Lobby). Aperçu 3D du skin du compte actif (façon Laby Launcher). Cartes des 6 modes avec le nombre de joueurs connectés ; un clic lance le jeu directement sur le mode (voir 3.6 bis). Dessous, « Tes autres serveurs » : les trois derniers serveurs hors Clover Games rejoints en jeu, en raccourcis Quick Play (voir 3.6 ter). Actualités du blog du site. Bandeau de maintenance. |
 | Mods | Deux onglets. **Catalogue Clover** : organisé (performance, visuel, confort), chaque mod activable, grisé s'il n'existe pas pour la version du serveur. **Mes mods** : mods ajoutés par le joueur (`.jar` ou import d'un autre launcher), non vérifiés, avec avertissement anticheat ; ceux faits pour une autre version ou un autre loader sont signalés et ne peuvent pas être activés, une mise à jour est proposée quand Modrinth en connaît une. |
 | Skins | Bibliothèque de skins (ajout d'un `.png`, skins par défaut du jeu), éditeur : texture, bras classiques ou fins, cape parmi celles du compte. Appliqué au compte Minecraft via l'API Mojang. Aperçu 3D en rotation horizontale seule. |
 | Paramètres | Six onglets. **Générales** : comptes, démarrer avec l'ordinateur, zone de notification, notifications bureau, mises à jour, canal bêta (staff). **Apparence** : taille de l'interface, animations, skin animé, derniers votes. **Jeu** : mémoire, comportement du launcher au lancement, plein écran, réglages recommandés, Java et arguments avancés. **Stockage** : espace utilisé par catégorie, nettoyage, dossier du jeu. **Intégrations** : Discord, Steam (ajout du launcher à la bibliothèque), rapports de plantage. **À propos** : versions, aide. |
@@ -25,7 +25,8 @@ Le launcher suit le serveur : la version, les mods et les modes sont décrits da
 | Installation | Java, Minecraft, Fabric et mods téléchargés, vérifiés (hash), reprise après coupure. |
 | Mises à jour | Launcher mis à jour automatiquement ; contenu du jeu resynchronisé à chaque lancement. |
 | Discord | (ID d'application public `857776082777276426`, embarqué dans `src-tauri/src/presence.rs`) Statut « Joue à Clover Games » via Discord Rich Presence : dans le launcher, puis en jeu avec la durée de la partie, logo Clover et boutons « Rejoindre le Discord » et « Site ». Désactivable dans les paramètres. Le mode en cours (BedWars, Practice…) arrive en V2 avec le mod Clover. |
-| Plantages | Accord demandé au premier lancement. Plantage du launcher envoyé à Sentry si accepté. Plantage du jeu : écran dédié avec copie du log. |
+| Console | Sortie du jeu en direct pendant la partie, sinon celle de la dernière partie (relue au démarrage du launcher). Filtres infos / avertissements / erreurs, recherche, copie des lignes affichées, « Effacer » (vide la console, pas le fichier journal), accès au dossier des journaux. Pendant la partie, « Voir la console » sous « Jouer » y mène. Le jeton Minecraft est masqué s'il apparaît dans la sortie. |
+| Plantages | Accord demandé au premier lancement. Plantage du launcher envoyé à Sentry si accepté. Plantage du jeu : écran dédié avec la fin de la console et sa copie. |
 | Langue | Français uniquement. |
 
 ### V2 (après la bêta)
@@ -38,7 +39,7 @@ Le launcher suit le serveur : la version, les mods et les modes sont décrits da
 
 ### Hors périmètre
 
-Autres serveurs, parties solo mises en avant, installations multiples façon Modrinth, comptes non premium.
+Autres serveurs (au-delà des raccourcis vers ceux déjà rejoints), parties solo mises en avant, installations multiples façon Modrinth, comptes non premium.
 
 ## 3. Architecture
 
@@ -106,6 +107,7 @@ Le champ `serial` (horodatage de construction) croît à chaque publication : le
 - `hidden` : dépendance ajoutée par le script (Fabric API, Cloth Config…), jamais affichée, installée avec les mods qui la requièrent.
 - `available` : faux si le mod ou l'une de ses dépendances n'a pas de version pour cette version de Minecraft ; le launcher le grise.
 - `default` : état initial pour un nouveau joueur.
+- `body` : description complète en français (Markdown), lue dans `manifest/descriptions/<slug>.md` ; remplace sur la page du mod la description Modrinth, souvent en anglais. Absente : la page garde celle de Modrinth. Le launcher la convertit et la nettoie (`modrinth::description_html`) avant affichage.
 
 Source dans le dépôt : `manifest/<canal>.json` (version, loader, serveur, modes, catalogue par slug Modrinth avec catégorie, état par défaut et description en français). `node manifest/manifest.mjs build <canal>` résout sur Modrinth la version Fabric compatible de chaque mod et de ses dépendances obligatoires, fige URL, SHA-512 et taille, puis signe avec la clé désignée par `CLOVER_MANIFEST_KEY`. La CI publiera le résultat sur R2 (CLO-275). L'historique git des sources sert de journal des changements de version.
 
@@ -164,6 +166,10 @@ Un mode dont l'entrée du manifeste porte `host` (ex. `bedwars.play.clovergames.
 3. Plugin : `pack.send-on-join: true` sur le backend cible, sinon un joueur arrivé sans passer par le Lobby n'a pas le resource pack. `ContentPackListener` évite déjà le renvoi aux joueurs transférés depuis un autre serveur Clover.
 4. Manifeste : ajouter `host` au mode, puis publier.
 
+### 3.6 ter Autres serveurs déjà rejoints
+
+Le jeu est lancé avec `--quickPlayPath ~/.cloverlauncher/quick-play.json` : à chaque connexion, Minecraft remplace ce fichier par cette seule connexion (type, adresse, nom donné dans sa liste de serveurs). Le launcher le relit toutes les 5 s pendant la partie, à sa fermeture et au démarrage du launcher (partie jouée launcher fermé), et garde les 16 derniers serveurs multijoueur dans `launcher.json` (`recentServers`). L'accueil en montre trois (deux si la colonne est étroite, plutôt que trois noms tronqués), hors `play.clovergames.fr`, adresses des modes et leurs sous-domaines ; ils prennent la place de l'astuce sous les modes, faute de hauteur à 1100×680. Chacun porte l'icône que le serveur renvoie au ping (`server_status`, comme la liste du jeu), à défaut l'icône « lancer ». Le ping suit l'enregistrement SRV `_minecraft._tcp.<hôte>` comme le jeu (`hickory-resolver`) : sans lui, un serveur hors 25565 paraît hors ligne. Un clic lance `--quickPlayMultiplayer <adresse>` avec la version, Fabric et les mods de Clover : un serveur qui refuse la 26.2 refuse la connexion. Le cœur n'accepte qu'une adresse de cet historique. Discord affiche alors « Joue à Minecraft », sans l'adresse.
+
 ### 3.7 Distribution sans budget
 
 | OS | Canal principal | Signature | Mises à jour |
@@ -178,7 +184,20 @@ Un mode dont l'entrée du manifeste porte `host` (ex. `bedwars.play.clovergames.
 - Les binaires et `latest.json` sont servis depuis R2 : les releases d'un dépôt GitHub privé ne se téléchargent pas publiquement.
 - Plus tard, si macOS compte : Apple Developer Program (99 $/an) supprime l'alerte Gatekeeper.
 - **Cloudflare R2** reste gratuit à cette échelle : 10 Go stockés, 1 M d'écritures et 10 M de lectures par mois, sortie de données gratuite. `clovergames.fr` est déjà chez Cloudflare, donc `cdn.clovergames.fr` se branche en quelques clics. Activer R2 peut exiger d'enregistrer une carte ou un compte PayPal.
-- **Page `/launcher` du site** : détection de l'OS, badge Microsoft Store, liens directs, guides d'ouverture macOS et Windows.
+- **Page `/launcher` du site** (`siteweb/src/app/(main)/(public)/launcher/`) : détection de l'OS, bouton Microsoft Store, liens directs, guides d'ouverture Windows, macOS et Linux. Elle lit `cdn.clovergames.fr/launcher/prod/downloads.json`, que la CI publie (CLO-275) après les binaires : `latest.json` ne convient pas, il pointe vers les paquets de mise à jour et non vers `.dmg`, `.deb` et `.rpm`. Tant que ce fichier manque, la page affiche « bientôt disponible ». Le bouton Store apparaît quand `MS_STORE_ID` (`siteweb/src/lib/constants/launcher.ts`) est renseigné.
+
+  ```json
+  {
+    "schema": 1,
+    "version": "0.2.0",
+    "date": "2026-10-20T12:00:00Z",
+    "files": [
+      { "kind": "exe", "url": "https://cdn.clovergames.fr/launcher/prod/0.2.0/…-setup.exe", "size": 9123456, "sha256": "<64 hex>" }
+    ]
+  }
+  ```
+
+  `kind` : `exe`, `dmg`, `appimage`, `deb` ou `rpm` (le système s'en déduit). Les URL doivent être versionnées, en `https://cdn.clovergames.fr`. Un fichier invalide ou un format inconnu est ignoré sans masquer les autres. Changer la forme impose d'incrémenter `schema`.
 
 ### 3.8 CI
 

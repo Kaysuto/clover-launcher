@@ -1,4 +1,4 @@
-import { House, Puzzle, Shirt } from "lucide-react";
+import { House, Puzzle, Shirt, SquareTerminal } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { Tab } from "@/types";
@@ -7,6 +7,7 @@ const ITEMS: { id: Tab; label: string; Icon: typeof House }[] = [
   { id: "home", label: "Accueil", Icon: House },
   { id: "mods", label: "Mods", Icon: Puzzle },
   { id: "skins", label: "Skins", Icon: Shirt },
+  { id: "console", label: "Console", Icon: SquareTerminal },
 ];
 
 /**

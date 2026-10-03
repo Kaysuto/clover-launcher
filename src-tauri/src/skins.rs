@@ -83,17 +83,32 @@ pub fn add(root: &Path, bytes: &[u8], name: &str, model: &str) -> Result<SkinEnt
     std::fs::create_dir_all(root.join("skins"))?;
     std::fs::write(skin_file(root, &id), bytes)?;
     let mut index = read_index(root);
-    let name: String = name.trim().trim_end_matches(".png").chars().take(32).collect();
-    let name = if name.is_empty() { "Skin".to_owned() } else { name };
+    let name = clean_name(name);
     index.retain(|entry| entry.id != id);
     index.push(IndexEntry { id: id.clone(), name: name.clone(), model: model.into() });
     write_index(root, &index)?;
     Ok(SkinEntry { id, name, model: model.into(), texture: data_url(bytes) })
 }
 
+/// Renomme un skin de la bibliothèque et rend le nom retenu, nettoyé comme à l'ajout.
+pub fn rename(root: &Path, id: &str, name: &str) -> Result<String> {
+    let name = clean_name(name);
+    let mut index = read_index(root);
+    if let Some(entry) = index.iter_mut().find(|entry| entry.id == id) {
+        entry.name = name.clone();
+        write_index(root, &index)?;
+    }
+    Ok(name)
+}
+
 pub fn remove(root: &Path, id: &str) -> Result<()> {
     let mut index = read_index(root);
+    let before = index.len();
     index.retain(|entry| entry.id != id);
+    // Un identifiant hors de l'index ne doit jamais devenir un chemin à supprimer.
+    if index.len() == before {
+        return Ok(());
+    }
     write_index(root, &index)?;
     match std::fs::remove_file(skin_file(root, id)) {
         Ok(()) => Ok(()),
@@ -189,6 +204,11 @@ fn data_url(bytes: &[u8]) -> String {
     format!("{DATA_URL_PREFIX}{}", STANDARD.encode(bytes))
 }
 
+fn clean_name(name: &str) -> String {
+    let name: String = name.trim().trim_end_matches(".png").chars().take(32).collect();
+    if name.is_empty() { "Skin".to_owned() } else { name }
+}
+
 fn skin_file(root: &Path, id: &str) -> PathBuf {
     root.join("skins").join(format!("{id}.png"))
 }
@@ -230,8 +250,17 @@ mod tests {
         let skins = library(&root);
         assert_eq!(skins.len(), 1);
         assert_eq!(skins[0].name, "Doublon");
+        assert_eq!(rename(&root, &first.id, "  Ancien.png ").unwrap(), "Ancien");
+        assert_eq!(rename(&root, &first.id, "   ").unwrap(), "Skin");
+        assert_eq!(library(&root)[0].name, "Skin");
+        rename(&root, "inconnu", "Autre").unwrap();
+        assert_eq!(library(&root).len(), 1);
         remove(&root, &first.id).unwrap();
         assert!(library(&root).is_empty());
+        let outside = root.join("dehors.png");
+        std::fs::write(&outside, b"x").unwrap();
+        remove(&root, "../dehors").unwrap();
+        assert!(outside.exists());
         let _ = std::fs::remove_dir_all(root);
     }
 

@@ -24,14 +24,14 @@ const SITE_URL: &str = "https://clovergames.fr";
 pub enum State {
     /// Launcher ouvert, pas de partie.
     Launcher,
-    /// Minecraft tourne depuis `since` (secondes Unix).
-    Playing { since: i64 },
+    /// Minecraft tourne depuis `since` (secondes Unix), lancé sur Clover Games ou sur un autre serveur.
+    Playing { since: i64, clover: bool },
 }
 
 impl State {
-    pub fn playing_now() -> Self {
+    pub fn playing_now(clover: bool) -> Self {
         let since = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |elapsed| elapsed.as_secs() as i64);
-        Self::Playing { since }
+        Self::Playing { since, clover }
     }
 }
 
@@ -97,10 +97,12 @@ fn activity(state: State) -> Activity<'static> {
         .buttons(vec![Button::new("Rejoindre le Discord", DISCORD_URL), Button::new("Site", SITE_URL)]);
     match state {
         State::Launcher => base.details("Dans le launcher").state("Prépare sa partie"),
-        State::Playing { since } => base
+        State::Playing { since, clover: true } => base
             .details("Joue à Clover Games")
             .state(format!("Sur {SERVER_HOST}"))
             .timestamps(Timestamps::new().start(since)),
+        // L'adresse d'un autre serveur reste privée.
+        State::Playing { since, clover: false } => base.details("Joue à Minecraft").timestamps(Timestamps::new().start(since)),
     }
 }
 
@@ -110,14 +112,15 @@ mod tests {
 
     #[test]
     fn playing_state_carries_start_time() {
-        let State::Playing { since } = State::playing_now() else { panic!("attendu : Playing") };
+        let State::Playing { since, .. } = State::playing_now(true) else { panic!("attendu : Playing") };
         assert!(since > 1_700_000_000);
     }
 
     #[test]
-    fn builds_both_activities() {
+    fn builds_every_activity() {
         let _ = activity(State::Launcher);
-        let _ = activity(State::Playing { since: 1_790_000_000 });
+        let _ = activity(State::Playing { since: 1_790_000_000, clover: true });
+        let _ = activity(State::Playing { since: 1_790_000_000, clover: false });
     }
 
     #[tokio::test]

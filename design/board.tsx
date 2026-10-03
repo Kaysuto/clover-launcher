@@ -6,23 +6,27 @@
  * Les icônes des modes sont des textures du jeu extraites en local dans `design/placeholder/`
  * (ignoré par git) ; les vraies viendront du manifeste.
  */
-import { StrictMode, type ReactNode, useState } from "react";
+import { StrictMode, type ReactNode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import "@/styles.css";
+import { AccountMenu } from "@/components/AccountMenu";
 import { NotificationBell } from "@/components/NotificationBell";
+import { type OtherServer } from "@/components/OtherServers";
 import { SideNav } from "@/components/SideNav";
 import { TitleBar } from "@/components/TitleBar";
 import { type RecentVote, VoteTicker } from "@/components/VoteTicker";
+import { ConsoleScreen } from "@/screens/ConsoleScreen";
 import { CrashDialog } from "@/screens/Dialogs";
 import { HomeScreen } from "@/screens/HomeScreen";
 import { DEFAULT_IMPORT, OnboardingAccounts, OnboardingDone, OnboardingImport } from "@/screens/OnboardingScreen";
-import { ModsScreen, type ModsView } from "@/screens/ModsScreen";
+import { ModrinthDialog } from "@/screens/ModrinthDialog";
+import { ModsScreen, type ModsView, type OpenMod } from "@/screens/ModsScreen";
 import { type Account, type Settings, SettingsScreen, type SettingsTab, type SteamState } from "@/screens/SettingsScreen";
 import { SkinEditorDialog } from "@/screens/SkinEditorDialog";
 import { SkinsScreen } from "@/screens/SkinsScreen";
 import { cn } from "@/lib/utils";
-import type { Cape, DetectedInstance, GameVersion, ImportItem, LauncherNotification, ModInfo, PersonalMod, ModeStatus, NewsItem, PlayState, Profile, SavedSkin, SkinLook, Tab } from "@/types";
+import type { Cape, DetectedInstance, GameVersion, ImportItem, LauncherNotification, LogEntry, ModInfo, ModrinthHit, ModrinthPage, ModrinthProject, PersonalMod, ModeStatus, NewsItem, PlayState, Profile, SavedSkin, SkinLook, Tab } from "@/types";
 
 const icon = (name: string) => new URL(`./placeholder/${name}.png`, import.meta.url).href;
 const skin = new URL("./placeholder/skin.png", import.meta.url).href;
@@ -80,6 +84,13 @@ const modes: ModeStatus[] = [
   { id: "creatif", name: "Créatif", icon: icon("bricks"), players: 29 },
 ];
 
+/** Icônes réelles relevées au ping ; la connexion directe n'en a pas (repli sur « lancer »). */
+const otherServers: OtherServer[] = [
+  { address: "mc.hypixel.net", name: "Hypixel", icon: icon("server-hypixel") },
+  { address: "play.pika-network.net", name: "PikaNetwork", icon: icon("server-pika") },
+  { address: "92.222.14.8:25570", name: "Serveur Minecraft", icon: null },
+];
+
 const news: NewsItem[] = [
   {
     title: "PvPSoup : le nouveau mode de combat libre",
@@ -111,6 +122,28 @@ const news: NewsItem[] = [
   },
 ];
 
+/** Logos publiés sur Modrinth, comme dans le manifeste (`mods[].icon`). */
+const MOD_ICONS: Record<string, string> = {
+  sodium: "https://cdn.modrinth.com/data/AANobbMI/295862f4724dc3f78df3447ad6072b2dcd3ef0c9_96.webp",
+  "ferrite-core": "https://cdn.modrinth.com/data/uXXizFIs/222a126f26f8f9ae1eb339f3b767677f18bff31f_96.webp",
+  immediatelyfast: "https://cdn.modrinth.com/data/5ZwdcRci/e57b6b451425692ac17ad322d5e14bea686a383a_96.webp",
+  entityculling: "https://cdn.modrinth.com/data/NNAgCjsB/7873452d6cede4daed12da3d7d8c193ab88b4fd6_96.webp",
+  moreculling: "https://cdn.modrinth.com/data/51shyZVL/c51b07193b56e952269ef50101d12aecba2b4747_96.webp",
+  "dynamic-fps": "https://cdn.modrinth.com/data/LQ3K71Q1/5056368d0d87c1a9f3efead0cb48ab39a4ea87bf_96.webp",
+  iris: "https://cdn.modrinth.com/data/YL57xq9U/18d0e7f076d3d6ed5bedd472b853909aac5da202_96.webp",
+  continuity: "https://cdn.modrinth.com/data/1IjD5062/icon.png",
+  "sodium-extra": "https://cdn.modrinth.com/data/PtjYWJkn/0df4fb22a11e1dcb5e83cb0aadd275b571aca7a9_96.webp",
+  "reeses-sodium-options": "https://cdn.modrinth.com/data/Bh37bMuy/icon.png",
+  modmenu: "https://cdn.modrinth.com/data/mOgUt4GM/5a20ed1450a0e1e79a1fe04e61bb4e5878bf1d20.png",
+  zoomify: "https://cdn.modrinth.com/data/w7ThoJFB/e2de67a0bfb9e8aa2347982ab3ec5463f26cca31_96.webp",
+  appleskin: "https://cdn.modrinth.com/data/EsAfCjCV/icon.png",
+  "chat-heads": "https://cdn.modrinth.com/data/Wb5oqrBJ/icon.png",
+  "mouse-tweaks": "https://cdn.modrinth.com/data/aC3cM3Vq/6c0eaa4e60a9c87f4766f222ff63286f09da32c0_96.webp",
+  shulkerboxtooltip: "https://cdn.modrinth.com/data/2M01OLQq/bb490716cf2590cf84100a495931c3d4743bce43_96.webp",
+  controlling: "https://cdn.modrinth.com/data/xv94TkTM/bdb6feb3d04ca37da4ed5aa73fef062a39d8b3e5_96.webp",
+  "betterf3": "https://cdn.modrinth.com/data/8shC1gFX/icon.png"
+};
+
 const mods: ModInfo[] = [
   ["sodium", "Sodium", "performance", "Moteur de rendu optimisé : beaucoup plus d'images par seconde.", "mc26.2-0.9.2-fabric", true],
   ["ferrite-core", "FerriteCore", "performance", "Réduit la mémoire utilisée par le jeu.", "9.0.0-fabric", true],
@@ -136,6 +169,7 @@ const mods: ModInfo[] = [
   category,
   description,
   version,
+  icon: MOD_ICONS[id as string] ?? null,
   available: version !== null,
   enabled,
 })) as ModInfo[];
@@ -147,10 +181,67 @@ java.lang.IllegalStateException: GLFW error before init: [0x10008]WGL: Failed to
 	at com.mojang.blaze3d.platform.Window.<init>(Window.java:117)
 	at net.minecraft.client.Minecraft.<init>(Minecraft.java:512)`;
 
+/** Sortie d'une partie : quelques milliers de lignes, pour éprouver le défilement et les filtres. */
+const consoleSample: LogEntry[] = Array.from({ length: 3000 }, (_, index) => {
+  const time = Date.parse("2026-10-03T21:40:00") + index * 120;
+  const entry = { id: index + 1, time, thread: "Render thread", throwable: null };
+  if (index === 0) return { ...entry, time: null, thread: null, logger: null, level: "warn", message: "WARNING: A restricted method in java.lang.System has been called" };
+  if (index % 97 === 0) return { ...entry, level: "error", logger: "net.minecraft.client.Minecraft", message: "Failed to load shader pack", throwable: "java.io.FileNotFoundException: shaderpacks/Complementary.zip\n\tat net.irisshaders.iris.Iris.loadShaderpack(Iris.java:412)" };
+  if (index % 11 === 0) return { ...entry, level: "warn", thread: "Worker-Main-8", logger: "net.minecraft.client.resources.model.sprite.MaterialBaker", message: `Missing texture references in model minecraft:default/sword_${index}:\n    particle` };
+  return { ...entry, level: "info", logger: "net.minecraft.client.renderer.texture.TextureAtlas", message: `Created: 512x256x0 minecraft:textures/atlas/particles_${index}.png-atlas` };
+}) as LogEntry[];
+
+/** Console en direct : une ligne de plus toutes les 400 ms. */
+function ConsoleBoard({ live = false }: { live?: boolean }) {
+  const [entries, setEntries] = useState(consoleSample);
+  useEffect(() => {
+    if (!live) return;
+    const timer = window.setInterval(
+      () =>
+        setEntries((current) => {
+          const id = current[current.length - 1].id + 1;
+          return [...current, { id, time: Date.now(), level: "info", thread: "Render thread", logger: "net.minecraft.client.gui.components.ChatComponent", message: `[CHAT] Message n°${id}`, throwable: null }];
+        }),
+      400,
+    );
+    return () => window.clearInterval(timer);
+  }, [live]);
+  return (
+    <Window tab="console">
+      <ConsoleScreen entries={entries} running={live} onClear={() => setEntries([])} onOpenLogs={noop} />
+    </Window>
+  );
+}
+
 /** Écran seul (`?screen=`) : la fenêtre remplit le navigateur, pour tester le redimensionnement. */
 const single = new URLSearchParams(location.search).has("screen");
 
-function Window({ children, tab, notificationsOpen }: { children: ReactNode; tab?: Tab; notificationsOpen?: boolean }) {
+function Accounts({ open }: { open?: boolean }) {
+  const [accounts, setAccounts] = useState(twoAccounts);
+  const active = accounts.find((account) => account.active) ?? accounts[0];
+  const use = (uuid: string) => setAccounts((all) => all.map((account) => ({ ...account, active: account.profile.uuid === uuid })));
+  // Plus aucun compte : le vrai launcher repasse sur l'écran de connexion.
+  if (!active) return null;
+  return (
+    <AccountMenu
+      profile={active.profile}
+      skin={active.skin}
+      accounts={accounts}
+      defaultOpen={open}
+      onUse={use}
+      onRemove={(uuid) =>
+        setAccounts((all) => {
+          const rest = all.filter((account) => account.profile.uuid !== uuid);
+          return rest.some((account) => account.active) ? rest : rest.map((account, index) => ({ ...account, active: index === 0 }));
+        })
+      }
+      onAdd={noop}
+      onManage={noop}
+    />
+  );
+}
+
+function Window({ children, tab, notificationsOpen, accountsOpen }: { children: ReactNode; tab?: Tab; notificationsOpen?: boolean; accountsOpen?: boolean }) {
   const [maximized, setMaximized] = useState(false);
   return (
     <div
@@ -161,7 +252,8 @@ function Window({ children, tab, notificationsOpen }: { children: ReactNode; tab
       )}
     >
       <TitleBar
-        session={tab ? { profile, skin, tab, onTab: noop, onAccount: noop } : undefined}
+        session={tab ? { tab, onTab: noop } : undefined}
+        account={<Accounts open={accountsOpen} />}
         activity={<VoteTicker votes={votes} onVote={noop} />}
         notifications={<Notifications open={notificationsOpen} />}
         maximized={maximized}
@@ -189,10 +281,10 @@ const versions: GameVersion[] = [
   { id: "1.20.1", loader: "Vanilla", server: false, joinable: false, installed: false, sizeMb: 610, mods: 0 },
 ];
 
-function Home({ play, notificationsOpen, versionOpen, initialVersion = "26.2" }: { play: PlayState; notificationsOpen?: boolean; versionOpen?: boolean; initialVersion?: string }) {
+function Home({ play, notificationsOpen, accountsOpen, versionOpen, initialVersion = "26.2" }: { play: PlayState; notificationsOpen?: boolean; accountsOpen?: boolean; versionOpen?: boolean; initialVersion?: string }) {
   const [selectedVersion, setSelectedVersion] = useState(initialVersion);
   return (
-    <Window tab="home" notificationsOpen={notificationsOpen}>
+    <Window tab="home" notificationsOpen={notificationsOpen} accountsOpen={accountsOpen}>
       <HomeScreen
         look={look}
         enabledMods={mods.filter((mod) => mod.enabled && mod.available).map((mod) => mod.name)}
@@ -206,23 +298,76 @@ function Home({ play, notificationsOpen, versionOpen, initialVersion = "26.2" }:
         server={{ online: true, players: 271 }}
         modes={modes}
         destination="lobby"
+        otherServers={otherServers}
+        onPlayServer={noop}
         news={news}
         onOpenLink={noop}
+        onOpenConsole={noop}
       />
     </Window>
   );
 }
 
 const personalMods: PersonalMod[] = [
-  { id: "litematica", name: "Litematica", version: "0.24.1", filename: "litematica-fabric-26.2-0.24.1.jar", source: "Importé de Prism Launcher · PvP 1.21", enabled: true, status: { kind: "ok" } },
-  { id: "malilib", name: "MaLiLib", version: "0.25.2", filename: "malilib-fabric-26.2-0.25.2.jar", source: "Importé de Prism Launcher · PvP 1.21", enabled: true, status: { kind: "ok" } },
-  { id: "worldedit-cui", name: "WorldEdit CUI", version: "1.21.4+01", filename: "WorldEditCUI-1.21.4+01.jar", source: "Importé de Prism Launcher · PvP 1.21", enabled: false, status: { kind: "update", builtFor: "1.21.4", version: "26.2+01" } },
-  { id: "replaymod", name: "Replay Mod", version: "1.21.4-2.6.20", filename: "replaymod-1.21.4-2.6.20.jar", source: "Importé de Modrinth App · Fabulously Optimized", enabled: false, status: { kind: "outdated", builtFor: "1.21.4" } },
-  { id: "jei", name: "Just Enough Items", version: "15.20.0", filename: "jei-1.20.1-forge-15.20.0.jar", source: "Importé de CurseForge · Skyblock", enabled: false, status: { kind: "loader", loader: "Forge" } },
-  { id: "custom-hud", name: "Custom HUD", version: "3.4.2", filename: "customhud-3.4.2+26.2.jar", source: null, enabled: true, status: { kind: "ok" } },
+  { id: "litematica", name: "Litematica", version: "0.24.1", filename: "litematica-fabric-26.2-0.24.1.jar", source: "Importé de Prism Launcher · PvP 1.21", projectId: "bEpr0Arc", enabled: true, status: { kind: "ok" } },
+  { id: "malilib", name: "MaLiLib", version: "0.25.2", filename: "malilib-fabric-26.2-0.25.2.jar", source: "Importé de Prism Launcher · PvP 1.21", projectId: "GcWjdA9I", enabled: true, status: { kind: "ok" } },
+  { id: "worldedit-cui", name: "WorldEdit CUI", version: "1.21.4+01", filename: "WorldEditCUI-1.21.4+01.jar", source: "Importé de Prism Launcher · PvP 1.21", projectId: null, enabled: false, status: { kind: "update", builtFor: "1.21.4", version: "26.2+01" } },
+  { id: "replaymod", name: "Replay Mod", version: "1.21.4-2.6.20", filename: "replaymod-1.21.4-2.6.20.jar", source: "Importé de Modrinth App · Fabulously Optimized", projectId: "Nv2fQJo5", enabled: false, status: { kind: "outdated", builtFor: "1.21.4" } },
+  { id: "jei", name: "Just Enough Items", version: "15.20.0", filename: "jei-1.20.1-forge-15.20.0.jar", source: "Importé de CurseForge · Skyblock", projectId: null, enabled: false, status: { kind: "loader", loader: "Forge" } },
+  { id: "custom-hud", name: "Custom HUD", version: "3.4.2", filename: "customhud-3.4.2+26.2.jar", source: null, projectId: null, enabled: true, status: { kind: "ok" } },
 ];
 
-function Mods({ view: initial = "catalogue" }: { view?: ModsView }) {
+const modrinthHits: ModrinthHit[] = [
+  { projectId: "1bokaNcj", slug: "xaeros-minimap", title: "Xaero's Minimap", description: "Displays a minimap of the area around you, with waypoints and entity radar.", author: "thexaero", iconUrl: null, downloads: 112807900 },
+  { projectId: "NcUtCpym", slug: "xaeros-world-map", title: "Xaero's World Map", description: "Adds a self-writing world map that you can open with a key.", author: "thexaero", iconUrl: null, downloads: 87452000 },
+  { projectId: "bEpr0Arc", slug: "litematica", title: "Litematica", description: "A modern client-side schematic mod for Minecraft.", author: "masa", iconUrl: null, downloads: 9800000 },
+  { projectId: "w7ThoJFB", slug: "zoomify", title: "Zoomify", description: "A zoom mod with infinite customizability.", author: "isxander", iconUrl: null, downloads: 6200000 },
+];
+
+async function searchModrinth(query: string): Promise<ModrinthPage> {
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const hits = modrinthHits.filter((hit) => hit.title.toLowerCase().includes(query.toLowerCase()));
+  return { hits, totalHits: hits.length };
+}
+
+const sodiumImages = ["d84313e6f57dc9e7896961dbd2dfc2689d482758", "6b0e58705156ba67a6d97a74b9f9ac05da69f502", "b681a9e87daa53a0e85336a894db70427007149b"];
+const sodiumTitles = ["Underwater Lighting Improvements", "Biome Blending Improvements", "Fluid Rendering Improvements"];
+
+async function modrinthProject(project: string): Promise<ModrinthProject> {
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const hit = modrinthHits.find((other) => other.projectId === project || other.slug === project);
+  return {
+    id: hit?.projectId ?? "AANobbMI",
+    slug: hit?.slug ?? project,
+    title: hit?.title ?? "Sodium",
+    description: hit?.description ?? "A high-performance rendering engine replacement for Minecraft.",
+    // Rendu de manifest/descriptions/sodium.md, tel que le launcher l'affiche.
+    descriptionHtml: [
+      "<p>Sodium remplace le moteur de rendu de Minecraft par un moteur bien plus rapide. Le jeu affiche nettement plus d'images par seconde, et les saccades sont beaucoup plus rares, surtout quand tu te déplaces vite ou que de nouveaux chunks se chargent.</p>",
+      "<p>L'apparence du jeu ne change pas. Sodium corrige même plusieurs défauts graphiques du jeu de base, comme l'éclairage sous l'eau, le mélange des couleurs entre biomes ou l'affichage des fluides.</p>",
+      "<h3>Bon à savoir</h3>",
+      "<ul><li>C'est la base des mods de rendu du catalogue : Iris, Sodium Extra et Reese's Sodium Options en ont besoin.</li><li>Ses réglages remplacent l'écran des options graphiques du jeu.</li><li>Il ne touche pas au gameplay et fonctionne sur tous les modes de Clover Games.</li></ul>",
+    ].join(""),
+    iconUrl: null,
+    author: hit?.author ?? "jellysquid3",
+    downloads: hit?.downloads ?? 235228968,
+    license: { id: "LicenseRef-Polyform-Shield-1.0.0", name: "" },
+    updated: "2026-09-20T21:27:09Z",
+    sourceUrl: "https://github.com/CaffeineMC/sodium",
+    issuesUrl: "https://github.com/CaffeineMC/sodium/issues",
+    wikiUrl: null,
+    discordUrl: "https://caffeinemc.net/discord",
+    gallery: hit
+      ? []
+      : sodiumImages.map((image, index) => ({
+          url: `https://cdn.modrinth.com/data/AANobbMI/images/${image}_350.webp`,
+          rawUrl: `https://cdn.modrinth.com/data/AANobbMI/images/${image}.webp`,
+          title: sodiumTitles[index],
+        })),
+  };
+}
+
+function Mods({ view: initial = "catalogue", open }: { view?: ModsView; open?: OpenMod }) {
   const [view, setView] = useState<ModsView>(initial);
   const [list, setList] = useState(mods);
   const [personal, setPersonal] = useState(personalMods);
@@ -239,6 +384,17 @@ function Mods({ view: initial = "catalogue" }: { view?: ModsView }) {
         onUpdatePersonal={(id) => setPersonal((all) => all.map((mod) => (mod.id === id ? { ...mod, status: { kind: "ok" } } : mod)))}
         onRemovePersonal={(id) => setPersonal((all) => all.filter((mod) => mod.id !== id))}
         onAddFiles={noop}
+        onOpenLink={noop}
+        defaultOpen={open}
+        modrinth={{
+          search: searchModrinth,
+          project: modrinthProject,
+          onInstall: async (projectId) => {
+            await new Promise((resolve) => setTimeout(resolve, 800));
+            const hit = modrinthHits.find((other) => other.projectId === projectId)!;
+            setPersonal((all) => [...all, { id: hit.slug, name: hit.title, version: "26.2", filename: `${hit.slug}.jar`, source: null, projectId, enabled: true, status: { kind: "ok" } }]);
+          },
+        }}
       />
     </Window>
   );
@@ -259,6 +415,8 @@ function Skins({ editing = false }: { editing?: boolean }) {
         activeId={activeId}
         onSelect={(item) => setActiveId(item.id)}
         onAddFile={noop}
+        onRename={noop}
+        onRemove={noop}
         onEdit={() => setOpen(true)}
       />
       <SkinEditorDialog open={open} draft={draft} capes={capes} saving={false} onChange={setDraft} onReplaceTexture={noop} onSave={() => setOpen(false)} onOpenChange={setOpen} />
@@ -448,13 +606,26 @@ const SCREENS: Record<string, { label: string; render: () => ReactNode }> = {
   "onboarding-done": { label: "Premier lancement 3/3 — terminé", render: () => <OnboardingDoneBoard /> },
   home: { label: "Accueil", render: () => <Home play={{ kind: "ready" }} /> },
   notifications: { label: "Accueil — notifications", render: () => <Home play={{ kind: "ready" }} notificationsOpen /> },
+  accounts: { label: "Accueil — comptes", render: () => <Home play={{ kind: "ready" }} accountsOpen /> },
   versions: { label: "Accueil — choix de la version", render: () => <Home play={{ kind: "ready" }} versionOpen initialVersion="1.21.11" /> },
   installing: {
     label: "Accueil — installation",
     render: () => <Home play={{ kind: "installing", progress: { phase: "assets", done: 1612, total: 3902 } }} />,
   },
+  playing: { label: "Accueil — en jeu", render: () => <Home play={{ kind: "running" }} /> },
   mods: { label: "Mods — catalogue", render: () => <Mods /> },
   "mods-personal": { label: "Mods — mes mods", render: () => <Mods view="personal" /> },
+  "mods-page": { label: "Mods — page d'un mod", render: () => <Mods open={{ list: "catalogue", id: "sodium" }} /> },
+  "mods-page-personal": { label: "Mods — page d'un mod personnel", render: () => <Mods view="personal" open={{ list: "personal", id: "litematica" }} /> },
+  "mods-modrinth": {
+    label: "Mods — rechercher un mod",
+    render: () => (
+      <>
+        <Mods view="personal" />
+        <ModrinthDialog open onOpenChange={noop} minecraftVersion="26.2" installed={new Set(["bEpr0Arc"])} search={searchModrinth} onInstall={() => new Promise(noop)} />
+      </>
+    ),
+  },
   settings: { label: "Paramètres — générales", render: () => <SettingsBoard /> },
   "settings-appearance": { label: "Paramètres — apparence", render: () => <SettingsBoard initial="appearance" /> },
   "settings-game": { label: "Paramètres — jeu", render: () => <SettingsBoard initial="game" /> },
@@ -463,6 +634,8 @@ const SCREENS: Record<string, { label: string; render: () => ReactNode }> = {
   "settings-about": { label: "Paramètres — à propos", render: () => <SettingsBoard initial="about" /> },
   skins: { label: "Skins", render: () => <Skins /> },
   "skin-editor": { label: "Skins — modifier", render: () => <Skins editing /> },
+  console: { label: "Console — dernière partie", render: () => <ConsoleBoard /> },
+  "console-live": { label: "Console — partie en cours", render: () => <ConsoleBoard live /> },
   crash: {
     label: "Plantage du jeu",
     render: () => (

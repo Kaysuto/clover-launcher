@@ -11,11 +11,13 @@
 
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+/** Descriptions complètes en français, `descriptions/<slug>.md`, affichées sur la page du mod. */
+const DESCRIPTIONS = join(ROOT, "descriptions");
 const MODRINTH = "https://api.modrinth.com/v2";
 const USER_AGENT = "Kaysuto/clover-launcher (contact@kaysuto.fr)";
 const SCHEMA = 1;
@@ -41,6 +43,14 @@ async function compatibleVersion(project, minecraft) {
   return null;
 }
 
+/** Description complète en français d'un mod du catalogue (Markdown), ou `null`. */
+async function description(slug) {
+  const file = join(DESCRIPTIONS, `${slug}.md`);
+  if (!existsSync(file)) return null;
+  const text = (await readFile(file, "utf8")).trim();
+  return text || null;
+}
+
 /**
  * Résout le catalogue et ses dépendances obligatoires. Les dépendances absentes du catalogue sont
  * ajoutées comme mods cachés : le joueur ne les voit pas, le launcher les installe avec les mods
@@ -59,7 +69,11 @@ async function resolveMods(catalogue, minecraft) {
     const mod = {
       id: project.slug,
       name: project.title,
+      // Logo publié sur Modrinth (CDN Modrinth), affiché sur la carte du mod.
+      icon: project.icon_url ?? null,
       description: entry.description ?? null,
+      // Remplace dans le launcher la description Modrinth, en anglais le plus souvent.
+      body: entry.hidden ? null : await description(entry.slug),
       category: entry.category ?? null,
       default: entry.default ?? false,
       hidden: entry.hidden,
@@ -128,6 +142,15 @@ async function build(channel) {
   await mkdir(out, { recursive: true });
   await writeFile(join(out, "manifest.json"), bytes);
   await writeFile(join(out, "manifest.json.sig"), `${signature}\n`);
+
+  // Un fichier mal nommé ne serait jamais affiché : le signaler plutôt que l'ignorer.
+  const slugs = new Set(source.mods.map((entry) => entry.slug));
+  const orphans = existsSync(DESCRIPTIONS)
+    ? (await readdir(DESCRIPTIONS)).filter((file) => file.endsWith(".md") && !slugs.has(file.slice(0, -3)))
+    : [];
+  if (orphans.length) console.warn(`Descriptions sans mod dans le catalogue : ${orphans.join(", ")}`);
+  const untranslated = manifest.mods.filter((mod) => !mod.hidden && !mod.body).map((mod) => mod.id);
+  if (untranslated.length) console.warn(`Sans description en français : ${untranslated.join(", ")}`);
 
   const unavailable = manifest.mods.filter((mod) => !mod.available).map((mod) => mod.id);
   console.log(`Écrit : ${join(out, "manifest.json")} (+ .sig), ${manifest.mods.length} mods`);

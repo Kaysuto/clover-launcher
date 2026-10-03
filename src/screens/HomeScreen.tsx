@@ -3,6 +3,7 @@ import { ArrowUpRight, Newspaper } from "lucide-react";
 import { HeroBackdrop } from "@/components/Backdrop";
 import { ModeGrid } from "@/components/ModeGrid";
 import { NewsList } from "@/components/NewsList";
+import { type OtherServer, OtherServers } from "@/components/OtherServers";
 import { PlayButton } from "@/components/PlayButton";
 import { SkinViewer } from "@/components/SkinViewer";
 import { VersionPicker } from "@/components/VersionPicker";
@@ -15,6 +16,8 @@ type Props = {
   /** Noms des mods activés, dans l'ordre du catalogue. */
   enabledMods: string[];
   onManageMods: () => void;
+  /** Pendant la partie : lien vers la console sous « Jouer ». */
+  onOpenConsole: () => void;
   play: PlayState;
   /** Sans argument : la destination de « Jouer ». Avec un mode : Quick Play sur ce mode. */
   onPlay: (mode?: string) => void;
@@ -28,6 +31,9 @@ type Props = {
   animateSkin?: boolean;
   modes: ModeStatus[];
   destination: string;
+  /** Serveurs hors Clover Games déjà rejoints, du plus récent au plus ancien. */
+  otherServers: OtherServer[];
+  onPlayServer: (address: string) => void;
   /** Du plus récent au plus ancien : le premier article passe à la une. */
   news: NewsItem[];
   onOpenLink: (url: string) => void;
@@ -35,7 +41,7 @@ type Props = {
 
 const date = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
 
-export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, versions, selectedVersion, onSelectVersion, versionOpen, server, animateSkin, modes, destination, news, onOpenLink }: Props) {
+export function HomeScreen({ look, enabledMods, onManageMods, onOpenConsole, play, onPlay, versions, selectedVersion, onSelectVersion, versionOpen, server, animateSkin, modes, destination, otherServers, onPlayServer, news, onOpenLink }: Props) {
   const [featured, ...others] = news;
   const current = versions.find((version) => version.id === selectedVersion) ?? versions[0];
   const destinationName = modes.find((mode) => mode.id === destination)?.name ?? "Lobby";
@@ -71,6 +77,7 @@ export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, vers
               <PlayButton
                 state={play}
                 onPlay={() => onPlay()}
+                onOpenConsole={onOpenConsole}
                 version={`Minecraft ${current.id} · ${current.loader.split(" ")[0]}${current.joinable ? "" : " · solo"}`}
                 picker={<VersionPicker versions={versions} selected={selectedVersion} onSelect={onSelectVersion} defaultOpen={versionOpen} />}
               />
@@ -103,11 +110,16 @@ export function HomeScreen({ look, enabledMods, onManageMods, play, onPlay, vers
             Modes de jeu
           </h2>
           <ModeGrid modes={modes} destination={destination} onPlay={onPlay} busy={play.kind !== "ready"} />
-          <p className="text-xs leading-snug text-muted-foreground">
-            {modes.some((mode) => mode.quickPlay)
-              ? <>Clique sur un mode pour t'y connecter directement. «&nbsp;Jouer&nbsp;» te mène au {destinationName}.</>
-              : <>«&nbsp;Jouer&nbsp;» te connecte au {destinationName}, puis tu choisis ton mode avec la boussole.</>}
-          </p>
+          {/* Pas la place pour les deux à 1100×680 : un joueur qui a déjà des serveurs récents a déjà joué. */}
+          {otherServers.length > 0 ? (
+            <OtherServers servers={otherServers} onPlay={onPlayServer} busy={play.kind !== "ready"} />
+          ) : (
+            <p className="text-xs leading-snug text-muted-foreground">
+              {modes.some((mode) => mode.quickPlay)
+                ? <>Clique sur un mode pour t'y connecter directement. «&nbsp;Jouer&nbsp;» te mène au {destinationName}.</>
+                : <>«&nbsp;Jouer&nbsp;» te connecte au {destinationName}, puis tu choisis ton mode avec la boussole.</>}
+            </p>
+          )}
 
           <div className="mt-auto flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 text-xs">
             <span className="shrink-0 text-muted-foreground">

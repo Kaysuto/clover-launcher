@@ -6,9 +6,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { NotificationBell } from "@/components/NotificationBell";
 import { SideNav } from "@/components/SideNav";
+import { AccountMenu } from "@/components/AccountMenu";
 import { TitleBar } from "@/components/TitleBar";
 import { VoteTicker } from "@/components/VoteTicker";
 import { api, type Catalogue, type ServerStatus, type SiteFeed, type SkinEntry, type Stored, type StorageUsage, type SystemInfo } from "@/lib/api";
+import { formatLog } from "@/lib/log";
+import { ConsoleScreen } from "@/screens/ConsoleScreen";
 import { CrashDialog } from "@/screens/Dialogs";
 import { HomeScreen } from "@/screens/HomeScreen";
 import { ModsScreen, type ModsView } from "@/screens/ModsScreen";
@@ -16,7 +19,7 @@ import { OnboardingAccounts, OnboardingDone, type LoginState } from "@/screens/O
 import { type Account, type Settings, SettingsScreen, type SettingsTab, type UpcomingSetting } from "@/screens/SettingsScreen";
 import { SkinEditorDialog } from "@/screens/SkinEditorDialog";
 import { SkinsScreen } from "@/screens/SkinsScreen";
-import type { Cape, GameVersion, ModInfo, PlayState, Profile, Progress, SavedSkin, SkinLook, Tab } from "@/types";
+import type { Cape, ConsoleSnapshot, GameVersion, ModInfo, PersonalMod, PlayState, Profile, Progress, SavedSkin, SkinLook, Tab } from "@/types";
 
 /** Étapes du premier lancement tant que l'import depuis les autres launchers n'existe pas (CLO-281). */
 const STEPS = ["Comptes", "Terminé"] as const;
@@ -38,6 +41,12 @@ const SERVER_POLL_MS = 60_000;
 const SERVER_RETRY_MS = 8_000;
 /** Actualités, joueurs par mode et votes : le site les met en cache 30 s à 5 min. */
 const SITE_POLL_MS = 60_000;
+/** Console ouverte : nouvelles lignes du jeu. */
+const CONSOLE_POLL_MS = 500;
+/** Comme le cœur Rust (`game/console.rs`) : au-delà, les plus anciennes lignes tombent. */
+const CONSOLE_MAX_ENTRIES = 10_000;
+/** Fin de la sortie montrée par l'écran de plantage. */
+const CRASH_LOG_ENTRIES = 40;
 
 const SITE_URL = "https://clovergames.fr";
 
@@ -74,12 +83,17 @@ export default function App() {
 
   const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
   const [server, setServer] = useState<ServerStatus | null>(null);
+  const [serverIcons, setServerIcons] = useState<Record<string, string>>({});
   const [feed, setFeed] = useState<SiteFeed>({ news: null, modes: null, votes: null });
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [storage, setStorage] = useState<StorageUsage | null>(null);
+  const [personalMods, setPersonalMods] = useState<PersonalMod[]>([]);
 
   const [play, setPlay] = useState<PlayState>({ kind: "ready" });
   const [crash, setCrash] = useState<{ code: number | null; log: string } | null>(null);
+  const [gameLog, setGameLog] = useState<ConsoleSnapshot>({ session: -1, running: false, entries: [] });
+  const gameLogRef = useRef(gameLog);
+  const pulling = useRef<Promise<ConsoleSnapshot> | null>(null);
 
   const [skins, setSkins] = useState<{ library: SkinEntry[]; defaults: SkinEntry[] }>({ library: [], defaults: [] });
   const [selectedSkin, setSelectedSkin] = useState<string | null>(null);
@@ -124,17 +138,60 @@ export default function App() {
     return () => void unlisten.then((stop) => stop());
   }, []);
 
+  // ── Console du jeu : nouvelles lignes après la dernière reçue ; tout est remplacé à chaque partie ──
+  const pullConsole = useCallback(() => {
+    pulling.current ??= (async () => {
+      const current = gameLogRef.current;
+      try {
+        const next = await api.gameConsole(current.entries[current.entries.length - 1]?.id ?? 0);
+        // Console effacée pendant la requête : sa réponse remettrait les anciennes lignes.
+        if (gameLogRef.current !== current) return gameLogRef.current;
+        const fresh = next.session !== current.session;
+        if (!fresh && next.entries.length === 0 && next.running === current.running) return current;
+        const entries = fresh ? next.entries : [...current.entries, ...next.entries];
+        const updated = { session: next.session, running: next.running, entries: entries.slice(-CONSOLE_MAX_ENTRIES) };
+        gameLogRef.current = updated;
+        setGameLog(updated);
+        return updated;
+      } catch {
+        return current;
+      } finally {
+        pulling.current = null;
+      }
+    })();
+    return pulling.current;
+  }, []);
+
+  // Le cœur Rust vide aussi sa console : les lignes suivantes repartent de là, même au plantage.
+  const clearConsole = useCallback(async () => {
+    await api.clearConsole();
+    const cleared = { ...gameLogRef.current, entries: [] };
+    gameLogRef.current = cleared;
+    setGameLog(cleared);
+  }, []);
+
+  useEffect(() => {
+    if (tab !== "console") return;
+    pullConsole();
+    const timer = window.setInterval(pullConsole, CONSOLE_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [tab, pullConsole]);
+
   // ── Installation et fin de partie ──
   useEffect(() => {
     const unlisten = [
       listen<Progress>("install-progress", ({ payload }) => setPlay({ kind: "installing", progress: payload })),
       listen<number | null>("game-exited", async ({ payload }) => {
         setPlay({ kind: "ready" });
-        if (payload !== 0) setCrash({ code: payload, log: await api.gameLogTail().catch(() => "") });
+        // Serveurs rejoints pendant la partie.
+        refreshStored();
+        if (payload === 0) return;
+        const log = await pullConsole();
+        setCrash({ code: payload, log: formatLog(log.entries.slice(-CRASH_LOG_ENTRIES)) });
       }),
     ];
     return () => unlisten.forEach((promise) => promise.then((stop) => stop()));
-  }, []);
+  }, [refreshStored, pullConsole]);
 
   // ── Statut du serveur ──
   useEffect(() => {
@@ -185,6 +242,12 @@ export default function App() {
   useEffect(() => {
     if (tab === "settings" && settingsTab === "storage") api.storageUsage().then(setStorage).catch(() => {});
   }, [tab, settingsTab]);
+
+  const refreshPersonalMods = useCallback(() => api.personalMods().then(setPersonalMods).catch((reason) => setNotice(String(reason))), []);
+
+  useEffect(() => {
+    if (tab === "mods") refreshPersonalMods();
+  }, [tab, refreshPersonalMods]);
 
   /** Réglage modifié : appliqué tout de suite, enregistré peu après (le curseur de mémoire bouge vite). */
   const updateSettings = useCallback((patch: Partial<Settings>) => {
@@ -237,10 +300,10 @@ export default function App() {
   }));
 
   // ── Jeu ──
-  const startGame = async (mode?: string) => {
+  const startGame = async (start: () => Promise<void>) => {
     setPlay({ kind: "installing" });
     try {
-      await api.play(mode);
+      await start();
       setPlay({ kind: "running" });
     } catch (reason) {
       setPlay({ kind: "ready", error: String(reason) });
@@ -256,7 +319,8 @@ export default function App() {
       name: mod.name,
       description: mod.description ?? "",
       category: mod.category!,
-      version: mod.version ?? null,
+      version: mod.version,
+      icon: mod.icon,
       available: mod.available,
       enabled: enabledIds.includes(mod.id),
     }));
@@ -265,6 +329,23 @@ export default function App() {
     const next = enabled ? [...new Set([...enabledIds, id])] : enabledIds.filter((other) => other !== id);
     updateSettings({ enabledMods: next });
   };
+
+  // ── Mes mods ──
+  const togglePersonalMod = (id: string, enabled: boolean) => {
+    setPersonalMods((all) => all.map((mod) => (mod.id === id ? { ...mod, enabled } : mod)));
+    api.setPersonalModEnabled(id, enabled).catch((reason) => setNotice(String(reason)));
+  };
+
+  /** Ajoute les fichiers un par un : un .jar refusé n'empêche pas les autres d'être ajoutés. */
+  const addPersonalMods = async (files: File[]) => {
+    const errors: string[] = [];
+    for (const file of files) await api.addPersonalMod(file).catch((reason) => errors.push(String(reason)));
+    if (errors.length > 0) setNotice(errors.join(" "));
+    await refreshPersonalMods();
+  };
+
+  const changePersonalMod = (action: Promise<void>) =>
+    action.then(refreshPersonalMods).catch((reason) => setNotice(String(reason)));
 
   const versions: GameVersion[] = catalogue
     ? [
@@ -279,6 +360,31 @@ export default function App() {
         },
       ]
     : [{ id: "…", loader: "Fabric", server: true, joinable: true, installed: false, sizeMb: null, mods: 0 }];
+
+  // Serveurs Clover Games exclus : l'adresse du serveur, celles des modes et leurs sous-domaines.
+  const cloverHosts = catalogue ? [catalogue.server.host, ...catalogue.modes.flatMap((mode) => mode.host ?? [])] : [];
+  const isClover = (address: string) => {
+    const host = address.toLowerCase().replace(/:\d+$/, "").replace(/\.$/, "");
+    return cloverHosts.some((clover) => host === clover || host.endsWith(`.${clover}`));
+  };
+  const recentOthers = catalogue ? (stored?.recentServers ?? []).filter((server) => !isClover(server.address)).slice(0, 3) : [];
+  const otherServers = recentOthers.map((server) => ({ ...server, icon: serverIcons[server.address] ?? null }));
+
+  // Icônes des autres serveurs : celle que le serveur renvoie au ping, comme dans la liste du jeu.
+  // Adresses jointes en une clé stable pour l'effet ; une adresse ne contient jamais d'espace.
+  const otherAddresses = recentOthers.map((server) => server.address).join(" ");
+  useEffect(() => {
+    let cancelled = false;
+    for (const address of otherAddresses.split(" ").filter(Boolean)) {
+      api
+        .serverStatus(address)
+        .then(({ favicon }) => !cancelled && favicon && setServerIcons((icons) => ({ ...icons, [address]: favicon })))
+        .catch(() => {});
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [otherAddresses]);
 
   // ── Skins ──
   const activeCape = profile?.capes?.find((cape) => cape.active);
@@ -305,6 +411,26 @@ export default function App() {
   const addSkinFile = async (file: File) => {
     try {
       await api.addSkin(new Uint8Array(await file.arrayBuffer()), file.name, "classic");
+      setSkins(await api.listSkins());
+      setSkinStatus(null);
+    } catch (reason) {
+      setSkinStatus({ kind: "error", message: String(reason) });
+    }
+  };
+
+  const renameSkin = async (skin: SavedSkin, name: string) => {
+    try {
+      const kept = await api.renameSkin(skin.id, name);
+      setSkins((current) => ({ ...current, library: current.library.map((entry) => (entry.id === skin.id ? { ...entry, name: kept } : entry)) }));
+      setSkinStatus(null);
+    } catch (reason) {
+      setSkinStatus({ kind: "error", message: String(reason) });
+    }
+  };
+
+  const removeSkin = async (skin: SavedSkin) => {
+    try {
+      await api.removeSkin(skin.id);
       setSkins(await api.listSkins());
       setSkinStatus(null);
     } catch (reason) {
@@ -396,10 +522,19 @@ export default function App() {
     <div className="flex h-full flex-col overflow-hidden bg-background">
       <TitleBar
         {...chrome}
-        session={
-          profile
-            ? { profile, skin: profile.skin?.url ?? activeAccount?.skinUrl ?? null, tab, onTab: setTab, onAccount: () => (setTab("settings"), setSettingsTab("general")) }
-            : undefined
+        session={profile ? { tab, onTab: setTab } : undefined}
+        account={
+          profile && (
+            <AccountMenu
+              profile={profile}
+              skin={profile.skin?.url ?? activeAccount?.skinUrl ?? null}
+              accounts={accounts}
+              onUse={useAccount}
+              onRemove={removeAccount}
+              onAdd={addAccount}
+              onManage={() => (setTab("settings"), setSettingsTab("general"))}
+            />
+          )
         }
         activity={settings.showVotes && feed.votes ? <VoteTicker votes={feed.votes} onVote={() => open(`${SITE_URL}/vote`)} /> : undefined}
         notifications={<NotificationBell items={[]} onOpen={() => {}} onReadAll={() => {}} />}
@@ -414,8 +549,9 @@ export default function App() {
               animateSkin={settings.animatedSkin && settings.animations !== "reduced"}
               enabledMods={modInfos.filter((mod) => mod.enabled && mod.available).map((mod) => mod.name)}
               onManageMods={() => setTab("mods")}
+              onOpenConsole={() => setTab("console")}
               play={play}
-              onPlay={startGame}
+              onPlay={(mode) => startGame(() => api.play(mode))}
               versions={versions}
               selectedVersion={versions[0].id}
               onSelectVersion={() => {}}
@@ -428,6 +564,8 @@ export default function App() {
                 quickPlay: Boolean(mode.host),
               }))}
               destination="lobby"
+              otherServers={otherServers}
+              onPlayServer={(address) => startGame(() => api.playServer(address))}
               news={feed.news ?? []}
               onOpenLink={open}
             />
@@ -440,10 +578,13 @@ export default function App() {
               mods={modInfos}
               minecraftVersion={catalogue?.minecraft.version ?? ""}
               onToggle={toggleMod}
-              onTogglePersonal={() => {}}
-              onUpdatePersonal={() => {}}
-              onRemovePersonal={() => {}}
-              onAddFiles={() => {}}
+              personal={personalMods}
+              onTogglePersonal={togglePersonalMod}
+              onUpdatePersonal={(id) => changePersonalMod(api.updatePersonalMod(id))}
+              onRemovePersonal={(id) => changePersonalMod(api.removePersonalMod(id))}
+              onAddFiles={(files) => void addPersonalMods(files)}
+              modrinth={{ search: api.searchModrinth, onInstall: (project) => api.installModrinthMod(project).then(refreshPersonalMods), project: api.modrinthProject }}
+              onOpenLink={open}
             />
           )}
 
@@ -457,9 +598,15 @@ export default function App() {
               activeId={selectedSkin}
               onSelect={applySkin}
               onAddFile={addSkinFile}
+              onRename={(skin, name) => void renameSkin(skin, name)}
+              onRemove={(skin) => void removeSkin(skin)}
               onEdit={() => setEditor({ open: true, draft: look, saving: false })}
               status={skinStatus}
             />
+          )}
+
+          {tab === "console" && (
+            <ConsoleScreen entries={gameLog.entries} running={gameLog.running} onClear={() => void clearConsole()} onOpenLogs={() => void api.openLogsDir()} />
           )}
 
           {tab === "settings" && (
@@ -519,7 +666,7 @@ export default function App() {
         onOpenLogs={() => void api.openLogsDir()}
         onRelaunch={() => {
           setCrash(null);
-          startGame();
+          startGame(() => api.play());
         }}
         onOpenChange={(openDialog) => !openDialog && setCrash(null)}
       />

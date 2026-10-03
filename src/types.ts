@@ -32,6 +32,9 @@ export type ModeStatus = {
   quickPlay?: boolean;
 };
 
+/** Serveur hors Clover Games déjà rejoint en jeu (journal Quick Play de Minecraft). */
+export type RecentServer = { address: string; name: string };
+
 export type NewsItem = {
   title: string;
   excerpt: string;
@@ -48,11 +51,32 @@ export type ModInfo = {
   description: string;
   category: ModCategory;
   version: string | null;
+  /** Logo du mod, ou `null` (case vide). */
+  icon: string | null;
   available: boolean;
   enabled: boolean;
 };
 
-export type Tab = "home" | "mods" | "skins" | "settings";
+export type Tab = "home" | "mods" | "skins" | "console" | "settings";
+
+export type LogLevel = "info" | "warn" | "error";
+
+/**
+ * Entrée de la sortie du jeu (évènement log4j, ou ligne brute sans heure ni fil). `id` croît
+ * d'une partie à l'autre et sert de curseur.
+ */
+export type LogEntry = {
+  id: number;
+  time: number | null;
+  level: LogLevel;
+  thread: string | null;
+  logger: string | null;
+  message: string;
+  throwable: string | null;
+};
+
+/** Entrées après un curseur ; `session` change à chaque lancement du jeu. */
+export type ConsoleSnapshot = { session: number; running: boolean; entries: LogEntry[] };
 
 /** Bras « classiques » (4 px) ou « fins » (3 px), comme dans Minecraft. */
 export type SkinModel = "classic" | "slim";
@@ -95,12 +119,47 @@ export type PersonalMod = {
   filename: string;
   /** « Importé de Prism Launcher · PvP 1.21 », ou `null` pour un fichier ajouté à la main. */
   source: string | null;
+  /** Projet Modrinth du fichier, s'il y est publié. */
+  projectId: string | null;
   enabled: boolean;
   status:
     | { kind: "ok" }
     | { kind: "update"; builtFor: string; version: string }
     | { kind: "outdated"; builtFor: string }
     | { kind: "loader"; loader: string };
+};
+
+/** Mod trouvé par la recherche Modrinth (Fabric, version du serveur, côté client). */
+export type ModrinthHit = {
+  projectId: string;
+  slug: string;
+  title: string;
+  description: string;
+  author: string;
+  iconUrl: string | null;
+  downloads: number;
+};
+
+export type ModrinthPage = { hits: ModrinthHit[]; totalHits: number };
+
+/** Page Modrinth d'un mod. Galerie : images mises en avant d'abord ; `url` est une miniature. */
+export type ModrinthProject = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  /** Description complète, en HTML déjà nettoyé côté Rust. */
+  descriptionHtml: string;
+  iconUrl: string | null;
+  author: string | null;
+  downloads: number;
+  license: { id: string; name: string } | null;
+  updated: string;
+  sourceUrl: string | null;
+  issuesUrl: string | null;
+  wikiUrl: string | null;
+  discordUrl: string | null;
+  gallery: { url: string; rawUrl: string | null; title: string | null }[];
 };
 
 export type NotificationKind = "level" | "achievement" | "purchase" | "reward" | "vote" | "announcement";

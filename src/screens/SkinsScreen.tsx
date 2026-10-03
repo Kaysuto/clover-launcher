@@ -1,10 +1,11 @@
-import { Check, MoveHorizontal, Pencil, Plus } from "lucide-react";
+import { Check, MoveHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { SkinFront } from "@/components/SkinFront";
 import { SkinViewer } from "@/components/SkinViewer";
 import { secondaryButton } from "@/lib/buttons";
 import { cn } from "@/lib/utils";
+import { DefaultSkinDialog } from "@/screens/Dialogs";
 import type { SavedSkin, SkinLook } from "@/types";
 
 type Props = {
@@ -16,6 +17,9 @@ type Props = {
   activeId: string | null;
   onSelect: (skin: SavedSkin) => void;
   onAddFile: (file: File) => void;
+  onRename: (skin: SavedSkin, name: string) => void;
+  /** Retire un skin de la bibliothèque locale, sans toucher au skin porté. */
+  onRemove: (skin: SavedSkin) => void;
   onEdit: () => void;
   /** Application en cours ou erreur de Mojang. */
   status?: { kind: "busy" | "error"; message: string } | null;
@@ -25,26 +29,76 @@ type Props = {
 /** Cadre de sélection de la barre d'inventaire, repris pour le skin porté. */
 const selectedFrame = "outline-[3px] outline-offset-2 outline-[#e9e3d4] [outline-style:solid]";
 
-function SkinTile({ skin, active, onSelect }: { skin: SavedSkin; active: boolean; onSelect: () => void }) {
+const tileAction = "grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary";
+
+type TileProps = {
+  skin: SavedSkin;
+  active: boolean;
+  onSelect: () => void;
+  onRename?: (name: string) => void;
+  onRemove?: () => void;
+};
+
+function SkinTile({ skin, active, onSelect, onRename, onRemove }: TileProps) {
+  const [editing, setEditing] = useState(false);
+  // Échap abandonne la saisie : le blur qui suit ne doit pas enregistrer.
+  const keep = useRef(true);
+  const actions = (onRename || onRemove) && !editing;
+  // Le bouton de sélection couvre toute la carte ; aperçu et nom passent au-dessus sans capter le clic,
+  // seuls les boutons d'action le reçoivent.
   return (
-    <li>
+    <li className="relative flex aspect-[4/5] flex-col">
       <button
         type="button"
         aria-pressed={active}
+        aria-label={skin.name}
         onClick={onSelect}
-        className={cn(
-          "relative flex aspect-[4/5] w-full flex-col items-center justify-end gap-2.5 rounded-lg border border-border bg-card pb-3 transition-colors hover:bg-[#241f19]",
-          active && selectedFrame,
-        )}
-      >
-        {active && (
-          <span className="absolute top-2 right-2 grid size-5 place-items-center rounded-full bg-[#e9e3d4] text-background">
-            <Check className="size-3.5" strokeWidth={3} aria-hidden />
+        className={cn("absolute inset-0 rounded-lg border border-border bg-card transition-colors hover:bg-[#241f19]", active && selectedFrame)}
+      />
+      {active && (
+        <span className="pointer-events-none absolute top-2 right-2 grid size-5 place-items-center rounded-full bg-[#e9e3d4] text-background">
+          <Check className="size-3.5" strokeWidth={3} aria-hidden />
+        </span>
+      )}
+      <div className="pointer-events-none relative flex flex-1 items-end justify-center pb-2">
+        <SkinFront texture={skin.texture} model={skin.model} scale={4} className="drop-shadow-[0_6px_6px_rgb(0_0_0/0.45)]" />
+      </div>
+      <div className="relative flex h-8 items-center gap-0.5 border-t border-border px-1.5">
+        {editing ? (
+          <input
+            autoFocus
+            defaultValue={skin.name}
+            maxLength={32}
+            aria-label={`Nouveau nom pour ${skin.name}`}
+            onFocus={(event) => event.currentTarget.select()}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") keep.current = false;
+              if (event.key === "Enter" || event.key === "Escape") event.currentTarget.blur();
+            }}
+            onBlur={(event) => {
+              const name = event.currentTarget.value.trim();
+              if (keep.current && name && name !== skin.name) onRename?.(name);
+              keep.current = true;
+              setEditing(false);
+            }}
+            className="h-6 min-w-0 flex-1 rounded-md border border-muted-foreground bg-[#100e0b] px-1.5 text-xs font-semibold outline-none"
+          />
+        ) : (
+          <span title={skin.name} className={cn("pointer-events-none min-w-0 flex-1 truncate text-xs font-semibold", actions ? "pl-1" : "text-center")}>
+            {skin.name}
           </span>
         )}
-        <SkinFront texture={skin.texture} model={skin.model} scale={4} className="drop-shadow-[0_6px_6px_rgb(0_0_0/0.45)]" />
-        <span className="text-xs font-semibold">{skin.name}</span>
-      </button>
+        {actions && onRename && (
+          <button type="button" onClick={() => setEditing(true)} aria-label={`Renommer ${skin.name}`} title="Renommer" className={cn(tileAction, "hover:text-foreground")}>
+            <Pencil className="size-4" aria-hidden />
+          </button>
+        )}
+        {actions && onRemove && (
+          <button type="button" onClick={onRemove} aria-label={`Retirer ${skin.name}`} title="Retirer" className={cn(tileAction, "hover:text-destructive")}>
+            <Trash2 className="size-4" aria-hidden />
+          </button>
+        )}
+      </div>
     </li>
   );
 }
@@ -94,7 +148,8 @@ function AddSkinTile({ onFile }: { onFile: (file: File) => void }) {
 
 const grid = "grid grid-cols-[repeat(auto-fill,minmax(132px,1fr))] gap-3";
 
-export function SkinsScreen({ playerName, look, saved, defaults, activeId, onSelect, onAddFile, onEdit, status, animateSkin }: Props) {
+export function SkinsScreen({ playerName, look, saved, defaults, activeId, onSelect, onAddFile, onRename, onRemove, onEdit, status, animateSkin }: Props) {
+  const [pendingDefault, setPendingDefault] = useState<SavedSkin | null>(null);
   return (
     <main className="flex min-h-0 flex-1">
       <aside className="relative flex w-[clamp(280px,30vw,380px)] shrink-0 flex-col items-center justify-center gap-3 border-r border-border bg-[radial-gradient(ellipse_at_50%_45%,rgb(82_169_108/0.12),transparent_65%)]">
@@ -131,7 +186,14 @@ export function SkinsScreen({ playerName, look, saved, defaults, activeId, onSel
           <ul className={grid}>
             <AddSkinTile onFile={onAddFile} />
             {saved.map((skin) => (
-              <SkinTile key={skin.id} skin={skin} active={skin.id === activeId} onSelect={() => onSelect(skin)} />
+              <SkinTile
+                key={skin.id}
+                skin={skin}
+                active={skin.id === activeId}
+                onSelect={() => onSelect(skin)}
+                onRename={(name) => onRename(skin, name)}
+                onRemove={() => onRemove(skin)}
+              />
             ))}
           </ul>
         </section>
@@ -143,12 +205,26 @@ export function SkinsScreen({ playerName, look, saved, defaults, activeId, onSel
           </h2>
           <ul className={grid}>
             {defaults.map((skin) => (
-              <SkinTile key={skin.id} skin={skin} active={skin.id === activeId} onSelect={() => onSelect(skin)} />
+              <SkinTile
+                key={skin.id}
+                skin={skin}
+                active={skin.id === activeId}
+                onSelect={() => (skin.id === activeId ? onSelect(skin) : setPendingDefault(skin))}
+              />
             ))}
           </ul>
         </section>
         )}
       </div>
+
+      <DefaultSkinDialog
+        skin={pendingDefault}
+        onCancel={() => setPendingDefault(null)}
+        onConfirm={(skin) => {
+          setPendingDefault(null);
+          onSelect(skin);
+        }}
+      />
     </main>
   );
 }

@@ -1,11 +1,15 @@
 //! Installation et lancement de Minecraft pour Clover Games.
 
+pub mod console;
 pub(crate) mod download;
 mod install;
 mod java;
 mod launch;
 pub mod manifest;
+pub mod modrinth;
 mod mods;
+pub mod personal;
+pub mod quick_play;
 mod version;
 
 use std::collections::HashSet;
@@ -15,6 +19,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::auth::Session;
+use crate::store::RecentServer;
 
 #[derive(Debug, thiserror::Error)]
 pub enum GameError {
@@ -22,6 +27,8 @@ pub enum GameError {
     NotSignedIn,
     #[error("Ce mode ne se rejoint pas directement : passe par le Lobby.")]
     NoQuickPlay,
+    #[error("Ce serveur ne fait pas partie de ceux que tu as déjà rejoints.")]
+    UnknownServer,
     #[error("Une mise à jour du Clover Launcher est nécessaire pour jouer.")]
     LauncherOutdated,
     #[error("Impossible de récupérer la configuration du jeu. Vérifie ta connexion Internet.")]
@@ -32,6 +39,10 @@ pub enum GameError {
     UnsupportedPlatform(String),
     #[error("Données de version invalides : {0}.")]
     InvalidVersion(String),
+    #[error("« {0} » n'est pas un mod Minecraft (.jar).")]
+    NotAMod(String),
+    #[error("Ce mod n'existe pas encore pour la version du serveur.")]
+    NoUpdate,
     #[error("Fichier corrompu après téléchargement : {0}")]
     Corrupted(String),
     #[error("Java n'a pas pu démarrer : {0}")]
@@ -70,9 +81,15 @@ pub struct Paths {
     pub runtimes: PathBuf,
     pub natives: PathBuf,
     pub logs: PathBuf,
+    /// Sortie du jeu pendant la dernière partie (voir `console`).
+    pub game_output: PathBuf,
     pub manifest: PathBuf,
     pub game: PathBuf,
     pub mods: PathBuf,
+    /// Mods ajoutés par le joueur (« Mes mods »), copiés dans `mods` au lancement.
+    pub personal_mods: PathBuf,
+    /// Journal Quick Play écrit par le jeu (voir `quick_play`).
+    pub quick_play_log: PathBuf,
 }
 
 impl Paths {
@@ -90,11 +107,22 @@ impl Paths {
             runtimes: root.join("runtimes"),
             natives: root.join("natives"),
             logs: root.join("logs"),
+            game_output: root.join("logs").join("game-output.log"),
             manifest: root.join("manifest"),
             game: root.join("game"),
             mods: root.join("game").join("mods"),
+            personal_mods: root.join("personal-mods"),
+            quick_play_log: root.join("quick-play.json"),
         })
     }
+}
+
+/// Serveur auquel le jeu se connecte au lancement (Quick Play).
+pub enum Destination {
+    /// Mode du manifeste à rejoindre directement, `None` pour le Lobby.
+    Mode(Option<String>),
+    /// Autre serveur déjà rejoint par le joueur, par son adresse.
+    Server(String),
 }
 
 /// Réglages du joueur qui changent la ligne de commande et les mods installés.
@@ -105,6 +133,8 @@ pub struct LaunchOptions {
     pub fullscreen: bool,
     /// `None` : mods activés par défaut dans le manifeste.
     pub enabled_mods: Option<HashSet<String>>,
+    /// Fichiers de « Mes mods » désactivés par le joueur.
+    pub disabled_personal_mods: Vec<String>,
 }
 
 /// Quart de la mémoire du poste, borné entre 2 et 6 Go.
@@ -136,9 +166,15 @@ pub async fn catalogue(app: &AppHandle) -> Result<manifest::Manifest> {
     manifest::load(&download::client(), &paths.manifest).await
 }
 
-/// Installe ce qui manque puis démarre le jeu, connecté directement au serveur.
-/// `mode` : identifiant d'un mode du manifeste à rejoindre directement, `None` pour le Lobby.
-pub async fn play(app: &AppHandle, session: &Session, options: LaunchOptions, mode: Option<&str>) -> Result<()> {
+/// Installe ce qui manque puis démarre le jeu, connecté directement à `destination`.
+/// `on_join` reçoit chaque serveur rejoint pendant la partie, et le dernier à sa fermeture.
+pub async fn play(
+    app: &AppHandle,
+    session: &Session,
+    options: LaunchOptions,
+    destination: Destination,
+    on_join: impl Fn(RecentServer) + Send + 'static,
+) -> Result<()> {
     let paths = Paths::new(app)?;
     let http = download::client();
     let progress = |progress: Progress| {
@@ -146,7 +182,10 @@ pub async fn play(app: &AppHandle, session: &Session, options: LaunchOptions, mo
     };
     let manifest = manifest::load(&http, &paths.manifest).await?;
     manifest::check_launcher_version(&manifest)?;
-    let server = manifest.server_for(mode).ok_or(GameError::NoQuickPlay)?.to_owned();
+    let server = match destination {
+        Destination::Mode(mode) => manifest.server_for(mode.as_deref()).ok_or(GameError::NoQuickPlay)?.to_owned(),
+        Destination::Server(address) => address,
+    };
     let enabled = options.enabled_mods.clone().unwrap_or_else(|| manifest.default_mods());
     eprintln!(
         "[manifest] n°{} : Minecraft {}, Fabric {}, {} mods activés",
@@ -156,9 +195,10 @@ pub async fn play(app: &AppHandle, session: &Session, options: LaunchOptions, mo
         enabled.len()
     );
     let installation = install::install(&http, &paths, &manifest, &progress).await?;
-    mods::sync(&http, &paths.mods, &manifest, &enabled, &|done, total| {
+    let personal = personal::loadable(&paths.personal_mods, &options.disabled_personal_mods, &manifest.minecraft.version);
+    mods::sync(&http, &paths.mods, &manifest, &enabled, &personal, &|done, total| {
         progress(Progress { phase: "mods", done, total })
     })
     .await?;
-    launch::spawn(app, &paths, installation, session, &server, &options).await
+    launch::spawn(app, &paths, installation, session, &server, &options, on_join).await
 }
