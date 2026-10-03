@@ -182,6 +182,7 @@ Le jeu est lancé avec `--quickPlayPath ~/.cloverlauncher/quick-play.json` : à 
 - **Identité Microsoft Store** (produit « Clover Launcher », réservé le 2026-09-29, type Application MSIX) : `Package/Identity/Name` = `KaysutoKimiya.CloverLauncher`, `Package/Identity/Publisher` = `CN=7A72D843-0285-46BE-A2AB-807CB9EC917B`, `Package/Properties/PublisherDisplayName` = `Kaysuto Kimiya` (le nom d'éditeur d'un compte Partner Center ne peut pas être modifié après l'inscription : pour afficher « Clover Games », il faudrait un nouveau compte, de type société, et donc une nouvelle identité de paquet ; décision reportée). Le MSIX doit porter exactement ces valeurs. Tauri ne produit pas de MSIX : l'`AppxManifest.xml` et `makeappx` sont à ajouter avec CLO-275. Première soumission avant fin décembre 2026, sinon la réservation du nom expire.
 - L'**updater Tauri** vérifie une signature ed25519 gratuite, indépendante de la signature du système : une mise à jour non signée par Clover est refusée.
 - Les binaires et `latest.json` sont servis depuis R2 : les releases d'un dépôt GitHub privé ne se téléchargent pas publiquement.
+- Le launcher vérifie `latest.json` une fois au démarrage. Réglage « Mettre à jour le launcher automatiquement » (actif par défaut) : téléchargement, installation et redémarrage aussitôt ; sinon, ou après un échec, la mise à jour est proposée dans un encart. Jamais pendant une partie lancée par le launcher. Le build MSIX du Store devra couper l'updater : le Store gère ses mises à jour.
 - Plus tard, si macOS compte : Apple Developer Program (99 $/an) supprime l'alerte Gatekeeper.
 - **Cloudflare R2** reste gratuit à cette échelle : 10 Go stockés, 1 M d'écritures et 10 M de lectures par mois, sortie de données gratuite. `clovergames.fr` est déjà chez Cloudflare, donc `cdn.clovergames.fr` se branche en quelques clics. Activer R2 peut exiger d'enregistrer une carte ou un compte PayPal.
 - **Page `/launcher` du site** (`siteweb/src/app/(main)/(public)/launcher/`) : détection de l'OS, bouton Microsoft Store, liens directs, guides d'ouverture Windows, macOS et Linux. Elle lit `cdn.clovergames.fr/launcher/prod/downloads.json`, que la CI publie (CLO-275) après les binaires : `latest.json` ne convient pas, il pointe vers les paquets de mise à jour et non vers `.dmg`, `.deb` et `.rpm`. Tant que ce fichier manque, la page affiche « bientôt disponible ». Le bouton Store apparaît quand `MS_STORE_ID` (`siteweb/src/lib/constants/launcher.ts`) est renseigné.
@@ -202,6 +203,10 @@ Le jeu est lancé avec `--quickPlayPath ~/.cloverlauncher/quick-play.json` : à 
 ### 3.8 CI
 
 GitHub Actions sur un dépôt privé `Kaysuto/clover-launcher` : lint, tests Rust et TS, build Windows/macOS/Linux, signatures updater et manifeste, envoi sur R2. Les minutes gratuites d'un dépôt privé sont limitées et macOS en consomme le plus : builds complets seulement sur tag de release.
+
+- `ci.yml` : sur `main` et les pull requests, Linux seul (`npm run build`, `cargo clippy -D warnings`, `cargo test`).
+- `release.yml` : sur un tag `v<version>` égal à la version de `src-tauri/Cargo.toml`. Rejoue `ci.yml`, construit NSIS (Windows), `.app`/`.dmg` universels signés ad hoc (macOS), AppImage, `.deb`, `.rpm` (Ubuntu 22.04), puis `scripts/release.mjs` vérifie que rien ne manque et écrit `latest.json` et `downloads.json`, envoyés sur R2 après les paquets.
+- `manifest.yml` : à la main ; résout le catalogue sur Modrinth, signe et publie le manifeste prod.
 
 ## 4. Risques à lever au prototype
 

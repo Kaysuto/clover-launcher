@@ -226,7 +226,7 @@ function General({ settings, onChange, accounts, onUseAccount, onRemoveAccount, 
         {hidden.includes("autoUpdate") ? (
           <p className="text-sm text-muted-foreground">Minecraft, Fabric et les mods se mettent à jour à chaque lancement.</p>
         ) : (
-        <Toggle id="auto-update" checked={settings.autoUpdate} onChange={(autoUpdate) => onChange({ autoUpdate })} hint="Téléchargées en arrière-plan, installées au prochain démarrage.">
+        <Toggle id="auto-update" checked={settings.autoUpdate} onChange={(autoUpdate) => onChange({ autoUpdate })} hint="Vérifiées et installées au démarrage du launcher. Sinon, la mise à jour t'est proposée.">
           Mettre à jour le launcher automatiquement
         </Toggle>
         )}

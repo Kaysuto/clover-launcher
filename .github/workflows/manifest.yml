@@ -1,0 +1,50 @@
+# Publication du manifeste prod, à lancer à la main (Actions › Manifeste › Run workflow) après une
+# modification de manifest/prod.json ou pour reprendre les dernières versions des mods sur Modrinth.
+# Le journal liste la version retenue pour chaque mod : à relire avant de relancer les joueurs.
+#
+# Secrets : CLOVER_MANIFEST_KEY (contenu de Sécurités/clover-launcher-manifest.pem),
+# R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY.
+name: Manifeste
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manifest
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Résolution sur Modrinth et signature
+        env:
+          MANIFEST_KEY: ${{ secrets.CLOVER_MANIFEST_KEY }}
+          CLOVER_MANIFEST_KEY: ${{ runner.temp }}/manifest.pem
+        run: |
+          (umask 077 && printf '%s\n' "$MANIFEST_KEY" > "$CLOVER_MANIFEST_KEY")
+          node manifest/manifest.mjs build prod
+          rm "$CLOVER_MANIFEST_KEY"
+
+      - name: Envoi sur R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        run: |
+          endpoint="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+          for file in manifest.json manifest.json.sig; do
+            aws s3 cp "manifest/dist/prod/$file" "s3://clover-launcher/launcher/prod/$file" --cache-control no-cache --endpoint-url "$endpoint"
+          done

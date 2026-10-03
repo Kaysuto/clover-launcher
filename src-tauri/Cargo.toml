@@ -41,6 +41,7 @@ tauri-plugin-single-instance = "2.5.1"
 hickory-resolver = "0.26"
 ammonia = "4.2.1"
 pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
+tauri-plugin-updater = "2"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

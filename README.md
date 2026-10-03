@@ -26,8 +26,28 @@ npx tsc --noEmit
 # Résout les mods sur Modrinth et signe (clé privée hors dépôt, dans Sécurités/ du workspace)
 CLOVER_MANIFEST_KEY="../Sécurités/clover-launcher-manifest.pem" npm run manifest -- build prod
 
-# Lancer le launcher sur le manifeste local tant que cdn.clovergames.fr n'existe pas
+# Lancer le launcher sur un manifeste local (la signature reste vérifiée)
 CLOVER_MANIFEST_DIR=manifest/dist/prod npm run tauri dev
+```
+
+En production, le manifeste se publie par la CI : Actions › Manifeste › Run workflow.
+
+## Release
+
+1. Monter `version` dans `src-tauri/Cargo.toml` (seule source : `tauri.conf.json` n'en a pas).
+2. Committer, puis pousser le tag : `git tag v0.2.0 && git push origin v0.2.0`.
+3. La CI (`.github/workflows/release.yml`) construit Windows, macOS et Linux, signe les paquets
+   de mise à jour et publie sur `cdn.clovergames.fr/launcher/prod/` : paquets dans `<version>/`,
+   puis `latest.json` (updater du launcher) et `downloads.json` (page `/launcher` du site).
+
+Clé de l'updater : `Sécurités/clover-launcher-updater.key` (hors dépôt, sans mot de passe), clé
+publique dans `tauri.conf.json`. Secrets du dépôt : `TAURI_SIGNING_PRIVATE_KEY`,
+`CLOVER_MANIFEST_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`.
+
+Build signé en local (Windows) :
+
+```bash
+TAURI_SIGNING_PRIVATE_KEY="../Sécurités/clover-launcher-updater.key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" npm run tauri build -- --bundles nsis
 ```
 
 ## Structure

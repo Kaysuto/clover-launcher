@@ -8,6 +8,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { SideNav } from "@/components/SideNav";
 import { AccountMenu } from "@/components/AccountMenu";
 import { TitleBar } from "@/components/TitleBar";
+import { type UpdateState, UpdateToast } from "@/components/UpdateToast";
 import { VoteTicker } from "@/components/VoteTicker";
 import { api, type Catalogue, type ServerStatus, type SiteFeed, type SkinEntry, type Stored, type StorageUsage, type SystemInfo } from "@/lib/api";
 import { formatLog } from "@/lib/log";
@@ -25,7 +26,7 @@ import type { Cape, ConsoleSnapshot, GameVersion, ModInfo, PersonalMod, PlayStat
 const STEPS = ["Comptes", "Terminé"] as const;
 
 /** Fonctions dont la ligne de réglage reste masquée tant qu'elles ne sont pas branchées. */
-const UPCOMING: UpcomingSetting[] = ["desktopNotifications", "autoUpdate", "recommended", "steam", "changeGameDir"];
+const UPCOMING: UpcomingSetting[] = ["desktopNotifications", "recommended", "steam", "changeGameDir"];
 
 const STORAGE_COLORS: Record<string, string> = {
   assets: "#52a96c",
@@ -99,6 +100,9 @@ export default function App() {
   const [selectedSkin, setSelectedSkin] = useState<string | null>(null);
   const [skinStatus, setSkinStatus] = useState<{ kind: "busy" | "error"; message: string } | null>(null);
   const [editor, setEditor] = useState<{ open: boolean; draft: SkinLook | null; saving: boolean }>({ open: false, draft: null, saving: false });
+
+  const [update, setUpdate] = useState<UpdateState | null>(null);
+  const updateChecked = useRef(false);
 
   const [maximized, setMaximized] = useState(false);
   const saveTimer = useRef<number | undefined>(undefined);
@@ -238,6 +242,38 @@ export default function App() {
     getCurrentWebview().setZoom(settings.scale / 100).catch(() => {});
     document.documentElement.classList.toggle("reduce-motion", settings.animations === "reduced");
   }, [settings?.scale, settings?.animations]);
+
+  // ── Mise à jour du launcher : vérifiée une fois au démarrage, installée d'office si le réglage le demande ──
+  const installUpdate = useCallback(async () => {
+    setUpdate((current) => current && { ...current, installing: true, ratio: null, error: undefined });
+    try {
+      await api.installUpdate();
+    } catch (reason) {
+      setUpdate((current) => current && { ...current, installing: false, error: String(reason) });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!settings || updateChecked.current) return;
+    updateChecked.current = true;
+    const autoUpdate = settings.autoUpdate;
+    api
+      .checkUpdate()
+      .then((info) => {
+        if (!info) return;
+        setUpdate({ info, installing: false, ratio: null });
+        if (autoUpdate) installUpdate();
+      })
+      // CDN injoignable ou aucune version publiée : nouvel essai au prochain démarrage.
+      .catch(() => {});
+  }, [settings, installUpdate]);
+
+  useEffect(() => {
+    const unlisten = listen<{ done: number; total: number | null }>("update-progress", ({ payload }) =>
+      setUpdate((current) => current && { ...current, ratio: payload.total ? payload.done / payload.total : null }),
+    );
+    return () => void unlisten.then((stop) => stop());
+  }, []);
 
   useEffect(() => {
     if (tab === "settings" && settingsTab === "storage") api.storageUsage().then(setStorage).catch(() => {});
@@ -671,14 +707,17 @@ export default function App() {
         onOpenChange={(openDialog) => !openDialog && setCrash(null)}
       />
 
-      {notice && (
-        <div role="alert" className="mc-frame fixed right-4 bottom-4 z-50 flex max-w-[420px] items-start gap-3 bg-card px-4 py-3 text-[13px] shadow-[0_12px_32px_rgb(0_0_0/0.5)]">
-          <p className="flex-1 leading-snug">{notice}</p>
-          <button type="button" onClick={() => setNotice(null)} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
-            Fermer
-          </button>
-        </div>
-      )}
+      <div className="fixed right-4 bottom-4 z-50 flex flex-col items-end gap-3">
+        {update && <UpdateToast update={update} onInstall={() => void installUpdate()} onDismiss={() => setUpdate(null)} />}
+        {notice && (
+          <div role="alert" className="mc-frame flex max-w-[420px] items-start gap-3 bg-card px-4 py-3 text-[13px] shadow-[0_12px_32px_rgb(0_0_0/0.5)]">
+            <p className="flex-1 leading-snug">{notice}</p>
+            <button type="button" onClick={() => setNotice(null)} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
+              Fermer
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

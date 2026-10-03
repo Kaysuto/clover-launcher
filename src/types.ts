@@ -59,6 +59,9 @@ export type ModInfo = {
 
 export type Tab = "home" | "mods" | "skins" | "console" | "settings";
 
+/** Version du launcher plus récente sur le CDN (updater Tauri). */
+export type LauncherUpdate = { version: string };
+
 export type LogLevel = "info" | "warn" | "error";
 
 /**

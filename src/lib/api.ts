@@ -6,7 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { Settings } from "@/screens/SettingsScreen";
 import type { RecentVote } from "@/components/VoteTicker";
-import type { ConsoleSnapshot, ModCategory, ModrinthPage, ModrinthProject, NewsItem, PersonalMod, Profile, RecentServer, SkinModel } from "@/types";
+import type { ConsoleSnapshot, LauncherUpdate, ModCategory, ModrinthPage, ModrinthProject, NewsItem, PersonalMod, Profile, RecentServer, SkinModel } from "@/types";
 
 export type AccountRef = { uuid: string; name: string; skinUrl: string | null };
 
@@ -71,6 +71,9 @@ export const api = {
   /** Sortie du jeu après l'entrée `after` (0 : tout ce que le launcher garde). */
   gameConsole: (after: number) => invoke<ConsoleSnapshot>("game_console", { after }),
   clearConsole: () => invoke<void>("clear_game_console"),
+  checkUpdate: () => invoke<LauncherUpdate | null>("check_update"),
+  /** Relance le launcher une fois la mise à jour installée : ne revient qu'en cas d'erreur. */
+  installUpdate: () => invoke<void>("install_update"),
   listSkins: () => invoke<{ library: SkinEntry[]; defaults: SkinEntry[] }>("list_skins"),
   addSkin: (bytes: Uint8Array, name: string, model: SkinModel) => invoke<SkinEntry>("add_skin", { bytes: Array.from(bytes), name, model }),
   renameSkin: (id: string, name: string) => invoke<string>("rename_skin", { id, name }),

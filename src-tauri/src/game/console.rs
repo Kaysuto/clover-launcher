@@ -118,6 +118,11 @@ impl Console {
         self.0.lock().expect("console").running = false;
     }
 
+    /// Minecraft lancé par ce launcher et pas encore fermé.
+    pub fn running(&self) -> bool {
+        self.0.lock().expect("console").running
+    }
+
     pub fn since(&self, after: u64) -> Snapshot {
         let inner = self.0.lock().expect("console");
         let first = inner.entries.partition_point(|entry| entry.id <= after);

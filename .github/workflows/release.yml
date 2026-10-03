@@ -1,0 +1,123 @@
+# Release du launcher : pousser un tag `v<version de src-tauri/Cargo.toml>` (ex. v0.2.0).
+# Construit Windows, macOS et Linux, signe les paquets de mise à jour (clé de l'updater), puis
+# publie sur R2 : paquets dans launcher/prod/<version>/, ensuite latest.json (updater) et
+# downloads.json (page /launcher du site).
+#
+# Secrets : TAURI_SIGNING_PRIVATE_KEY (Sécurités/clover-launcher-updater.key, sans mot de passe),
+# R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (jeton limité au bucket clover-launcher).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: checks
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: windows-latest
+            args: --bundles nsis
+          - os: macos-latest
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin --bundles app,dmg
+          # La plus ancienne glibc encore disponible : l'AppImage tourne sur plus de distributions.
+          - os: ubuntu-22.04
+            args: --bundles appimage,deb,rpm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Tag et version de Cargo.toml identiques
+        shell: bash
+        run: |
+          version=$(grep -m1 '^version = ' src-tauri/Cargo.toml | cut -d'"' -f2)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME, mais src-tauri/Cargo.toml est en $version."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Dépendances système de Tauri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev pkg-config patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - name: Construction et signature
+        run: npm run tauri build -- ${{ matrix.args }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+
+      - run: node scripts/release.mjs collect src-tauri/target out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paquets-${{ runner.os }}
+          path: out/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - uses: actions/download-artifact@v5
+        with:
+          path: out
+          pattern: paquets-*
+          merge-multiple: true
+
+      # Échoue si un système manque : jamais d'index vers une release partielle.
+      - run: node scripts/release.mjs index out
+
+      - name: Envoi sur R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          # R2 n'accepte pas les sommes de contrôle ajoutées d'office par les versions récentes d'aws.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        run: |
+          endpoint="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+          channel="s3://clover-launcher/launcher/prod"
+          version="${GITHUB_REF_NAME#v}"
+          # Paquets d'abord, sous un dossier versionné ; les index ensuite.
+          aws s3 cp out "$channel/$version/" --recursive --exclude "*.sig" --exclude "*.json" --endpoint-url "$endpoint"
+          for index in latest.json downloads.json; do
+            aws s3 cp "out/$index" "$channel/$index" --content-type application/json --cache-control no-cache --endpoint-url "$endpoint"
+          done

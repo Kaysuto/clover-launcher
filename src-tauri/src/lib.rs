@@ -6,6 +6,7 @@ mod skins;
 mod status;
 mod storage;
 mod store;
+mod update;
 
 use std::path::PathBuf;
 use std::sync::Mutex as SyncMutex;
@@ -213,6 +214,22 @@ fn clear_game_console(console: State<'_, game::console::Console>) {
     console.clear();
 }
 
+/// Nouvelle version du launcher sur le CDN ; `None` si celle-ci est la dernière.
+#[tauri::command]
+async fn check_update(app: AppHandle, pending: State<'_, update::PendingUpdate>) -> Result<Option<update::UpdateInfo>, String> {
+    update::check(&app, &pending).await.inspect_err(|e| eprintln!("[update] {e}"))
+}
+
+/// Installe la version trouvée par `check_update` puis relance le launcher. Pas pendant une
+/// partie : le launcher fermé, la console et le suivi des serveurs rejoints s'arrêteraient.
+#[tauri::command]
+async fn install_update(app: AppHandle, pending: State<'_, update::PendingUpdate>, console: State<'_, game::console::Console>) -> Result<(), String> {
+    if console.running() {
+        return Err("Ferme Minecraft avant de mettre à jour le launcher.".into());
+    }
+    update::install(&app, &pending).await.inspect_err(|e| eprintln!("[update] {e}"))
+}
+
 #[tauri::command]
 fn open_logs_dir(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let logs = state.root.join("logs");
@@ -418,9 +435,11 @@ pub fn run() {
         // En premier : une seconde instance réaffiche la fenêtre existante puis se ferme.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main_window(app)))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![MINIMIZED_ARG])))
         .manage(CurrentSession::default())
         .manage(Presence::default())
+        .manage(update::PendingUpdate::default())
         .setup(|app| {
             let paths = game::Paths::new(app.handle())?;
             let root = paths.root;
@@ -521,6 +540,8 @@ pub fn run() {
             modrinth_project,
             install_modrinth_mod,
             play,
+            check_update,
+            install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

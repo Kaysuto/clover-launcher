@@ -1,0 +1,47 @@
+# Vérifications du dépôt, sur Linux seulement : les minutes macOS et Windows d'un dépôt privé
+# sont réservées aux releases (release.yml, qui réutilise ce workflow).
+name: Vérifications
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Dépendances système de Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      # tsc puis vite build : l'interface compile et `dist/` existe pour le cœur Rust.
+      - run: npm run build
+
+      - run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri
+
+      - run: cargo test
+        working-directory: src-tauri
