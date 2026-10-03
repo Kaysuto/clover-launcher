@@ -169,6 +169,8 @@ struct SystemInfo {
     auto_memory_gb: u64,
     java: Option<String>,
     launcher: &'static str,
+    /// Paquet du Microsoft Store : pas d'updater, pas de démarrage avec l'ordinateur par le registre.
+    store: bool,
 }
 
 #[tauri::command]
@@ -179,6 +181,7 @@ fn system_info(app: AppHandle) -> Result<SystemInfo, String> {
         auto_memory_gb: game::auto_memory_mb() / 1024,
         java: game::installed_java(&paths),
         launcher: env!("CARGO_PKG_VERSION"),
+        store: update::store_package(),
     })
 }
 

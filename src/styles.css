@@ -141,6 +141,29 @@
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
+
+  /*
+   * Barres de défilement aux couleurs du site (thème sombre de siteweb/src/app/globals.css).
+   * Pseudo-éléments seulement : WebView2 les ignore dès que `scrollbar-width` ou `scrollbar-color`
+   * est défini. La bordure transparente élargit la zone cliquable sans épaissir le trait.
+   */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--secondary) padding-box;
+    border: 2px solid transparent;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover,
+  ::-webkit-scrollbar-thumb:active {
+    background-color: var(--primary);
+  }
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

@@ -40,6 +40,16 @@
       "icons/icon.ico"
     ],
     "createUpdaterArtifacts": true,
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "sidebarImage": "installer/sidebar.bmp",
+        "headerImage": "installer/header.bmp",
+        "languages": ["French"],
+        "startMenuFolder": "Clover Games"
+      }
+    },
     "macOS": {
       "signingIdentity": "-"
     }

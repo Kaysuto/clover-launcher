@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Paquet MSIX du Microsoft Store, assemblé par scripts/msix.mjs (version remplacée à partir de
+  src-tauri/Cargo.toml). L'identité doit rester exactement celle réservée dans Partner Center
+  (SPEC.md §3.7). Le Store signe le paquet ; aucun certificat dans le dépôt.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="KaysutoKimiya.CloverLauncher"
+    Publisher="CN=7A72D843-0285-46BE-A2AB-807CB9EC917B"
+    Version="{{VERSION}}"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Clover Launcher</DisplayName>
+    <PublisherDisplayName>Kaysuto Kimiya</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="fr-FR" />
+  </Resources>
+
+  <Applications>
+    <Application Id="CloverLauncher" Executable="clover-launcher.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Clover Launcher"
+        Description="Launcher officiel de Clover Games"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile
+          Wide310x150Logo="Assets\Wide310x150Logo.png"
+          Square310x310Logo="Assets\Square310x310Logo.png"
+          Square71x71Logo="Assets\Square71x71Logo.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <!-- Application de bureau : Java et Minecraft sont lancés hors conteneur d'application. -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

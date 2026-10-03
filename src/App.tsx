@@ -17,7 +17,7 @@ import { CrashDialog } from "@/screens/Dialogs";
 import { HomeScreen } from "@/screens/HomeScreen";
 import { ModsScreen, type ModsView } from "@/screens/ModsScreen";
 import { OnboardingAccounts, OnboardingDone, type LoginState } from "@/screens/OnboardingScreen";
-import { type Account, type Settings, SettingsScreen, type SettingsTab, type UpcomingSetting } from "@/screens/SettingsScreen";
+import { type Account, type Settings, SettingsScreen, type SettingsTab, type HiddenSetting } from "@/screens/SettingsScreen";
 import { SkinEditorDialog } from "@/screens/SkinEditorDialog";
 import { SkinsScreen } from "@/screens/SkinsScreen";
 import type { Cape, ConsoleSnapshot, GameVersion, ModInfo, PersonalMod, PlayState, Profile, Progress, SavedSkin, SkinLook, Tab } from "@/types";
@@ -26,7 +26,9 @@ import type { Cape, ConsoleSnapshot, GameVersion, ModInfo, PersonalMod, PlayStat
 const STEPS = ["Comptes", "Terminé"] as const;
 
 /** Fonctions dont la ligne de réglage reste masquée tant qu'elles ne sont pas branchées. */
-const UPCOMING: UpcomingSetting[] = ["desktopNotifications", "recommended", "steam", "changeGameDir"];
+const UPCOMING: HiddenSetting[] = ["desktopNotifications", "recommended", "steam", "changeGameDir"];
+/** Paquet du Microsoft Store : le Store gère les mises à jour, et le registre y est virtualisé. */
+const STORE_HIDDEN: HiddenSetting[] = ["autoUpdate", "startWithSystem"];
 
 const STORAGE_COLORS: Record<string, string> = {
   assets: "#52a96c",
@@ -647,7 +649,7 @@ export default function App() {
 
           {tab === "settings" && (
             <SettingsScreen
-              hidden={UPCOMING}
+              hidden={system?.store ? [...UPCOMING, ...STORE_HIDDEN] : UPCOMING}
               tab={settingsTab}
               onTab={setSettingsTab}
               settings={settings}

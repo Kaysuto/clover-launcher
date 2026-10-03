@@ -43,7 +43,8 @@ export type Settings = {
 };
 
 /** Réglages dont la fonction n'est pas encore branchée : leur ligne est masquée. */
-export type UpcomingSetting = "desktopNotifications" | "autoUpdate" | "recommended" | "steam" | "changeGameDir";
+/** Réglages masqués : fonctions pas encore branchées, ou sans effet dans le paquet du Microsoft Store. */
+export type HiddenSetting = "desktopNotifications" | "autoUpdate" | "startWithSystem" | "recommended" | "steam" | "changeGameDir";
 
 export type Account = { profile: Profile; skin: string | null; active: boolean };
 
@@ -54,7 +55,7 @@ export type StoragePart = { id: string; label: string; bytes: number; color: str
 export type SteamState = "absent" | "running" | "ready" | "added";
 
 type Props = {
-  hidden?: UpcomingSetting[];
+  hidden?: HiddenSetting[];
   tab: SettingsTab;
   onTab: (tab: SettingsTab) => void;
   settings: Settings;
@@ -206,9 +207,11 @@ function General({ settings, onChange, accounts, onUseAccount, onRemoveAccount, 
       </Row>
 
       <Row title="Démarrage et fermeture" hint="Le launcher reste disponible pour les notifications et les mises à jour, sans fenêtre ouverte.">
-        <Toggle id="start-with-system" checked={settings.startWithSystem} onChange={(startWithSystem) => onChange({ startWithSystem })} hint="Réduit dans la zone de notification.">
-          Démarrer avec l'ordinateur
-        </Toggle>
+        {!hidden.includes("startWithSystem") && (
+          <Toggle id="start-with-system" checked={settings.startWithSystem} onChange={(startWithSystem) => onChange({ startWithSystem })} hint="Réduit dans la zone de notification.">
+            Démarrer avec l'ordinateur
+          </Toggle>
+        )}
         <Toggle id="keep-in-tray" checked={settings.keepInTray} onChange={(keepInTray) => onChange({ keepInTray })} hint="« Quitter » se trouve dans le menu de l'icône.">
           Rester dans la zone de notification à la fermeture
         </Toggle>
@@ -224,7 +227,7 @@ function General({ settings, onChange, accounts, onUseAccount, onRemoveAccount, 
 
       <Row title="Mises à jour" hint="Le launcher, Minecraft, Fabric et les mods suivent le serveur.">
         {hidden.includes("autoUpdate") ? (
-          <p className="text-sm text-muted-foreground">Minecraft, Fabric et les mods se mettent à jour à chaque lancement.</p>
+          <p className="text-sm text-muted-foreground">Le Microsoft Store met à jour le launcher. Minecraft, Fabric et les mods se mettent à jour à chaque lancement.</p>
         ) : (
         <Toggle id="auto-update" checked={settings.autoUpdate} onChange={(autoUpdate) => onChange({ autoUpdate })} hint="Vérifiées et installées au démarrage du launcher. Sinon, la mise à jour t'est proposée.">
           Mettre à jour le launcher automatiquement

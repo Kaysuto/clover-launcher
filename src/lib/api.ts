@@ -47,7 +47,8 @@ export type SiteFeed = {
   modes: { id: string; online: boolean | null; players: number | null }[] | null;
   votes: RecentVote[] | null;
 };
-export type SystemInfo = { totalMemoryGb: number; autoMemoryGb: number; java: string | null; launcher: string };
+/** `store` : lancé depuis le paquet du Microsoft Store (mises à jour par le Store). */
+export type SystemInfo = { totalMemoryGb: number; autoMemoryGb: number; java: string | null; launcher: string; store: boolean };
 export type StorageUsage = { parts: { id: string; label: string; bytes: number }[]; reclaimable: number; gameDir: string };
 export type SkinEntry = { id: string; name: string; model: SkinModel; texture: string };
 

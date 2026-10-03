@@ -78,6 +78,18 @@ jobs:
 
       - run: node scripts/release.mjs collect src-tauri/target out
 
+      # Pour Partner Center, à soumettre à la main : jamais envoyé sur R2.
+      - name: Paquet MSIX du Microsoft Store
+        if: runner.os == 'Windows'
+        run: node scripts/msix.mjs msix
+
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: msix-store
+          path: msix/
+          if-no-files-found: error
+
       - uses: actions/upload-artifact@v4
         with:
           name: paquets-${{ runner.os }}

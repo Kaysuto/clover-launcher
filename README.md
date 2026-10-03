@@ -44,6 +44,11 @@ Clé de l'updater : `Sécurités/clover-launcher-updater.key` (hors dépôt, san
 publique dans `tauri.conf.json`. Secrets du dépôt : `TAURI_SIGNING_PRIVATE_KEY`,
 `CLOVER_MANIFEST_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`.
 
+Le workflow produit aussi `msix-store` (artefact GitHub, pas sur le CDN) : le paquet MSIX à
+soumettre dans Partner Center. En local, après `npm run tauri build` : `node scripts/msix.mjs`
+(paquet) ou `node scripts/msix.mjs --layout` puis
+`Add-AppxPackage -Register src-tauri/target/msix/layout/AppxManifest.xml` (mode développeur).
+
 Build signé en local (Windows) :
 
 ```bash

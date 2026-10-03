@@ -639,6 +639,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "url",
+ "windows-sys 0.61.2",
  "zip 8.6.0",
 ]
 
