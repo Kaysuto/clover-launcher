@@ -27,8 +27,8 @@ const STEPS = ["Comptes", "Terminé"] as const;
 
 /** Fonctions dont la ligne de réglage reste masquée tant qu'elles ne sont pas branchées. */
 const UPCOMING: HiddenSetting[] = ["desktopNotifications", "recommended", "steam", "changeGameDir"];
-/** Paquet du Microsoft Store : le Store gère les mises à jour, et le registre y est virtualisé. */
-const STORE_HIDDEN: HiddenSetting[] = ["autoUpdate", "startWithSystem"];
+/** Paquet du Microsoft Store : le Store gère les mises à jour du launcher. */
+const STORE_HIDDEN: HiddenSetting[] = ["autoUpdate"];
 
 const STORAGE_COLORS: Record<string, string> = {
   assets: "#52a96c",

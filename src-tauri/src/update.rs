@@ -23,23 +23,8 @@ struct DownloadProgress {
     total: Option<u64>,
 }
 
-/// Lancé depuis le paquet MSIX du Microsoft Store : le Store installe les mises à jour, l'updater
-/// ne doit rien télécharger ni lancer d'installeur NSIS.
-pub fn store_package() -> bool {
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::Foundation::APPMODEL_ERROR_NO_PACKAGE;
-        use windows_sys::Win32::Storage::Packaging::Appx::GetCurrentPackageFullName;
-        let mut length = 0;
-        // Sans tampon : ERROR_INSUFFICIENT_BUFFER dans un paquet, APPMODEL_ERROR_NO_PACKAGE sinon.
-        unsafe { GetCurrentPackageFullName(&mut length, std::ptr::null_mut()) != APPMODEL_ERROR_NO_PACKAGE }
-    }
-    #[cfg(not(windows))]
-    false
-}
-
 pub async fn check(app: &AppHandle, pending: &PendingUpdate) -> Result<Option<UpdateInfo>, String> {
-    if store_package() {
+    if crate::msix::packaged() {
         return Ok(None);
     }
     let update = app
@@ -56,7 +41,7 @@ pub async fn check(app: &AppHandle, pending: &PendingUpdate) -> Result<Option<Up
 /// Télécharge le paquet (avancement dans l'évènement `update-progress`), l'installe et relance le
 /// launcher. Sous Windows, l'installeur ferme le launcher et le relance lui-même.
 pub async fn install(app: &AppHandle, pending: &PendingUpdate) -> Result<(), String> {
-    if store_package() {
+    if crate::msix::packaged() {
         return Err("Les mises à jour passent par le Microsoft Store.".into());
     }
     // Gardée en attente : après un échec, « Installer » peut réessayer.

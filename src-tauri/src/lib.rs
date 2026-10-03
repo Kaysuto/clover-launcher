@@ -1,5 +1,6 @@
 mod auth;
 mod game;
+mod msix;
 mod presence;
 mod site;
 mod skins;
@@ -135,9 +136,14 @@ async fn save_settings(settings: store::Settings, app: AppHandle, state: State<'
         presence.set_enabled(settings.discord_presence).await;
     }
     if previous.start_with_system != settings.start_with_system {
-        let autolaunch = app.autolaunch();
-        let result = if settings.start_with_system { autolaunch.enable() } else { autolaunch.disable() };
-        result.map_err(|e| format!("Démarrage avec l'ordinateur impossible : {e}"))?;
+        let enabled = settings.start_with_system;
+        if msix::packaged() {
+            tauri::async_runtime::spawn_blocking(move || msix::set_start_with_system(enabled)).await.map_err(|e| e.to_string())??;
+        } else {
+            let autolaunch = app.autolaunch();
+            let result = if enabled { autolaunch.enable() } else { autolaunch.disable() };
+            result.map_err(|e| format!("Démarrage avec l'ordinateur impossible : {e}"))?;
+        }
     }
     Ok(())
 }
@@ -169,7 +175,7 @@ struct SystemInfo {
     auto_memory_gb: u64,
     java: Option<String>,
     launcher: &'static str,
-    /// Paquet du Microsoft Store : pas d'updater, pas de démarrage avec l'ordinateur par le registre.
+    /// Paquet du Microsoft Store : mises à jour par le Store, démarrage par la tâche du paquet.
     store: bool,
 }
 
@@ -181,7 +187,7 @@ fn system_info(app: AppHandle) -> Result<SystemInfo, String> {
         auto_memory_gb: game::auto_memory_mb() / 1024,
         java: game::installed_java(&paths),
         launcher: env!("CARGO_PKG_VERSION"),
-        store: update::store_package(),
+        store: msix::packaged(),
     })
 }
 
@@ -490,7 +496,8 @@ pub fn run() {
                         }
                     }
                 });
-                if !std::env::args().any(|arg| arg == MINIMIZED_ARG) {
+                let at_login = std::env::args().any(|arg| arg == MINIMIZED_ARG) || msix::started_by_startup_task();
+                if !at_login {
                     window.show()?;
                 }
             }
