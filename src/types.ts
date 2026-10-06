@@ -57,7 +57,37 @@ export type ModInfo = {
   enabled: boolean;
 };
 
-export type Tab = "home" | "mods" | "skins" | "console" | "settings";
+export type Tab = "home" | "instances" | "mods" | "skins" | "console" | "settings";
+
+export type InstanceKind = "clover" | "vanilla" | "fabric";
+export type Instance = {
+  id: string; name: string; kind: InstanceKind;
+  minecraft: string | null; loader: string | null;
+  separate: boolean; memoryMb: number | null;
+  enabledMods: string[] | null; disabledMods: string[]; lastPlayed: number | null;
+};
+export type InstanceEntry = Instance & { gameDir: string; installed: boolean };
+export type InstanceInput = Pick<Instance, "name" | "kind" | "minecraft" | "loader" | "separate" | "memoryMb">;
+export type AvailableVersion = { id: string; snapshot: boolean; released: string };
+/** Partie terminée (`history.rs`) : début en secondes Unix, code de sortie `null` si le jeu a été tué. */
+export type PlaySession = { instance: string; started: number; seconds: number; code: number | null; servers: string[] };
+export type ContentFolder = "saves" | "datapacks" | "resourcepacks" | "shaderpacks" | "screenshots";
+/** Monde, pack ou capture ; `image` est une adresse affichable (icône du monde, capture). */
+/**
+ * Élément d'un onglet d'instance. Pour un pack (ressources, shader, datapack) : `title` et `icon` du
+ * projet Modrinth s'il y est publié, sinon logo `pack.png` du pack ; `world` : monde d'un datapack.
+ */
+export type ContentEntry = {
+  name: string;
+  title: string | null;
+  icon: string | null;
+  world: string | null;
+  /** Pack chargé par le jeu ; toujours vrai pour les mondes et captures. */
+  enabled: boolean;
+  size: number;
+  modified: number | null;
+  image: string | null;
+};
 
 /** Version du launcher plus récente sur le CDN (updater Tauri). */
 export type LauncherUpdate = { version: string };
@@ -92,23 +122,47 @@ export type SkinLook = { texture: string; model: SkinModel; cape: Cape | null };
 
 export type SavedSkin = { id: string; name: string; texture: string; model: SkinModel };
 
-/** Ce qu'on peut reprendre d'une instance d'un autre launcher. */
+/**
+ * Ce qu'on peut reprendre d'une instance d'un autre launcher. `options` comprend les réglages des mods
+ * (`config/`) ; `mods` active les équivalents du catalogue, `personalMods` copie les autres dans « Mes mods ».
+ */
 export type ImportItem = "options" | "servers" | "resourcePacks" | "shaderPacks" | "screenshots" | "worlds" | "mods" | "personalMods";
+
+/** Contenu d'une installation, ou ce qu'un import en a copié. */
+export type ImportContent = { options: boolean; servers: number; resourcePacks: number; shaderPacks: number; screenshots: number; worlds: number };
 
 /** Instance trouvée dans un autre launcher (officiel, Modrinth App, Prism, CurseForge…). */
 export type DetectedInstance = {
   id: string;
   launcher: string;
   name: string;
-  minecraft: string;
-  /** `null` pour une instance sans mods (vanilla). */
+  /** `null` quand l'autre launcher ne l'indique pas sans ouvrir ses données de compte. */
+  minecraft: string | null;
+  /** `null` pour une instance sans mods (vanilla) ou un loader inconnu. */
   loader: string | null;
   path: string;
-  content: { options: boolean; servers: number; resourcePacks: number; shaderPacks: number; screenshots: number; worlds: number };
-  /** Mods de l'instance qui existent dans le catalogue Clover, reconnus par leur empreinte. */
-  catalogueMods: string[];
-  /** Mods hors catalogue : copiés dans « Mes mods » si le joueur le demande, désactivés au départ. */
-  otherMods: number;
+  content: ImportContent;
+  /** Mods du catalogue Clover reconnus par leur empreinte, pas encore activés. */
+  catalogueMods: { id: string; name: string }[];
+  /** Autres mods Fabric (noms de fichiers) : copiés dans « Mes mods » si le joueur le demande. */
+  personalMods: string[];
+  /** Mods d'un autre loader (Forge, NeoForge, Quilt) : pas repris. */
+  otherMods: string[];
+};
+
+/** Avancement de la recherche (évènements `import-scan`) : installations annoncées, puis mods envoyés à Modrinth. */
+export type ImportScan = { found: { launcher: string; name: string; mods: number }[]; identifying: number | null };
+
+/** Résultat d'un import : éléments copiés, mods ajoutés à « Mes mods », et ce qui était déjà chez Clover. */
+export type ImportResult = ImportContent & {
+  mods: number;
+  /** Dépendances obligatoires des mods copiés, téléchargées depuis Modrinth. */
+  dependencies: number;
+  /** Dépendances sans version pour Minecraft du serveur. */
+  missingDependencies: number;
+  /** Modrinth injoignable : dépendances non vérifiées. */
+  dependenciesUnchecked: boolean;
+  kept: number;
 };
 
 /**
@@ -118,6 +172,8 @@ export type DetectedInstance = {
 export type PersonalMod = {
   id: string;
   name: string;
+  /** Logo Modrinth, ou celui du .jar (adresse `data:`), sinon `null`. */
+  icon: string | null;
   version: string | null;
   filename: string;
   /** « Importé de Prism Launcher · PvP 1.21 », ou `null` pour un fichier ajouté à la main. */
@@ -132,7 +188,10 @@ export type PersonalMod = {
     | { kind: "loader"; loader: string };
 };
 
-/** Mod trouvé par la recherche Modrinth (Fabric, version du serveur, côté client). */
+/** Types de projets cherchés sur Modrinth ; un modpack devient une nouvelle instance. */
+export type ModrinthKind = "mod" | "resourcepack" | "shader" | "datapack" | "modpack";
+
+/** Projet trouvé par la recherche Modrinth, pour la version de l'instance. */
 export type ModrinthHit = {
   projectId: string;
   slug: string;
@@ -141,6 +200,8 @@ export type ModrinthHit = {
   author: string;
   iconUrl: string | null;
   downloads: number;
+  /** Déjà fourni par les mods Clover activés, dépendances comprises. */
+  providedByClover?: boolean;
 };
 
 export type ModrinthPage = { hits: ModrinthHit[]; totalHits: number };
@@ -178,19 +239,4 @@ export type LauncherNotification = {
   url: string | null;
   createdAt: string;
   read: boolean;
-};
-
-/** Version de Minecraft que le launcher sait lancer (le serveur, ou une autre pour le solo). */
-export type GameVersion = {
-  id: string;
-  loader: string;
-  /** Version que fait tourner le réseau Clover Games (`minecraft.version` du manifeste). */
-  server: boolean;
-  /** Peut se connecter à play.clovergames.fr : seule la version du serveur, sans ViaBackwards. */
-  joinable: boolean;
-  installed: boolean;
-  /** Taille du téléchargement restant, `null` si déjà installée. */
-  sizeMb: number | null;
-  /** Mods du catalogue Clover disponibles pour cette version. */
-  mods: number;
 };

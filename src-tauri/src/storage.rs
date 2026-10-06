@@ -33,6 +33,7 @@ pub fn usage(root: &Path) -> Usage {
         Part { id: "mods", label: "Mods", bytes: size(&[game.join("mods"), root.join("personal-mods")]) },
         Part { id: "worlds", label: "Mondes solo", bytes: size(&[game.join("saves")]) },
         Part { id: "screenshots", label: "Captures d'écran", bytes: size(&[game.join("screenshots")]) },
+        Part { id: "instances", label: "Instances personnelles", bytes: size(&[root.join("instances")]) },
     ];
     Usage {
         parts,

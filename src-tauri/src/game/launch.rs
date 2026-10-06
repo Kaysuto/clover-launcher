@@ -20,18 +20,10 @@ const QUICK_PLAY_POLL: Duration = Duration::from_secs(5);
 /// Attente de la fin de la sortie une fois le jeu fermé.
 const OUTPUT_GRACE: Duration = Duration::from_secs(3);
 
-pub async fn spawn(
-    app: &AppHandle,
-    paths: &Paths,
-    installation: Installation,
-    session: &Session,
-    server: &str,
-    options: &LaunchOptions,
-    on_join: impl Fn(RecentServer) + Send + 'static,
-) -> Result<()> {
-    let Installation { java, vanilla, loader, classpath, logging_argument } = installation;
-    let natives = paths.natives.join(&loader.id);
-    tokio::fs::create_dir_all(&natives).await?;
+pub(crate) fn build_arguments(paths: &Paths, installation: &Installation, session: &Session, server: Option<&str>, options: &LaunchOptions) -> Result<Vec<String>> {
+    let Installation { vanilla, loader, classpath, logging_argument, .. } = installation;
+    let version_id = loader.as_ref().map_or(vanilla.id.as_str(), |loader| &loader.id);
+    let natives = paths.natives.join(version_id);
 
     let separator = if cfg!(windows) { ";" } else { ":" };
     let classpath = classpath.iter().map(|path| path.to_string_lossy()).collect::<Vec<_>>().join(separator);
@@ -42,8 +34,10 @@ pub async fn spawn(
         ("auth_uuid", session.profile.uuid.replace('-', "")),
         ("auth_access_token", session.minecraft_token.clone()),
         ("auth_xuid", String::new()),
+        ("user_type", "msa".into()),
+        ("user_properties", "{}".into()),
         ("clientid", String::new()),
-        ("version_name", loader.id.clone()),
+        ("version_name", version_id.to_owned()),
         ("version_type", vanilla.kind.clone().unwrap_or_else(|| "release".into())),
         ("game_directory", paths.game.to_string_lossy().into_owned()),
         ("assets_root", paths.assets.to_string_lossy().into_owned()),
@@ -52,29 +46,47 @@ pub async fn spawn(
         ("classpath", classpath),
         ("launcher_name", "clover-launcher".into()),
         ("launcher_version", env!("CARGO_PKG_VERSION").into()),
-        ("quickPlayMultiplayer", server.to_owned()),
+        ("quickPlayMultiplayer", server.unwrap_or_default().to_owned()),
         ("quickPlayPath", paths.quick_play_log.to_string_lossy().into_owned()),
     ];
-    let features = ["is_quick_play_multiplayer", "has_quick_plays_support"];
+    let features = if server.is_some() { vec!["is_quick_play_multiplayer", "has_quick_plays_support"] } else { vec!["has_quick_plays_support"] };
 
-    let main_class = loader
-        .main_class
-        .clone()
+    let main_class = loader.as_ref().and_then(|loader| loader.main_class.clone())
         .or(vanilla.main_class.clone())
         .ok_or_else(|| GameError::InvalidVersion("classe principale absente".into()))?;
     let mut arguments = vec![format!("-Xmx{}M", options.memory_mb.unwrap_or_else(auto_memory_mb))];
     arguments.extend(options.java_args.iter().cloned());
-    arguments.extend(logging_argument);
+    arguments.extend(logging_argument.iter().cloned());
     arguments.extend(expand(&vanilla.arguments.jvm, &features));
-    arguments.extend(expand(&loader.arguments.jvm, &features));
+    if vanilla.arguments.jvm.is_empty() {
+        arguments.extend(["-Djava.library.path=${natives_directory}".into(), "-cp".into(), "${classpath}".into()]);
+        if cfg!(target_os = "macos") { arguments.push("-XstartOnFirstThread".into()); }
+    }
+    if let Some(loader) = &loader { arguments.extend(expand(&loader.arguments.jvm, &features)); }
     arguments.push(main_class);
     arguments.extend(expand(&vanilla.arguments.game, &features));
-    arguments.extend(expand(&loader.arguments.game, &features));
+    if let Some(legacy) = &vanilla.minecraft_arguments { arguments.extend(legacy.split_whitespace().map(str::to_owned)); }
+    if let Some(loader) = &loader { arguments.extend(expand(&loader.arguments.game, &features)); }
     if options.fullscreen {
         arguments.push("--fullscreen".into());
     }
-    let arguments: Vec<String> = arguments.iter().map(|argument| substitute(argument, &variables)).collect();
+    Ok(arguments.iter().map(|argument| substitute(argument, &variables)).collect())
 
+}
+
+pub async fn spawn(
+    app: &AppHandle,
+    paths: &Paths,
+    installation: Installation,
+    session: &Session,
+    server: Option<&str>,
+    options: &LaunchOptions,
+    on_join: impl Fn(RecentServer) + Send + 'static,
+) -> Result<()> {
+    let arguments = build_arguments(paths, &installation, session, server, options)?;
+    let Installation { java, vanilla, loader, .. } = installation;
+    let version_id = loader.as_ref().map_or(vanilla.id.as_str(), |loader| &loader.id);
+    tokio::fs::create_dir_all(paths.natives.join(version_id)).await?;
     tokio::fs::create_dir_all(&paths.game).await?;
     tokio::fs::create_dir_all(&paths.logs).await?;
     // Écrit ligne par ligne : le fichier reste à jour pendant la partie.
@@ -87,6 +99,9 @@ pub async fn spawn(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(GameError::Spawn)?;
+    if let Some(pid) = child.id() {
+        super::window_title::start(pid, &vanilla.id);
+    }
     let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
         unreachable!("sorties du jeu redirigées juste au-dessus");
     };
@@ -130,6 +145,27 @@ fn substitute(argument: &str, variables: &[(&str, String)]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn personal_games_open_the_menu_and_clover_keeps_quick_play() {
+        let vanilla = serde_json::from_str(r#"{"id":"1.20.1","mainClass":"net.minecraft.client.main.Main","arguments":{"jvm":["-cp","${classpath}"],"game":["--gameDir","${game_directory}","--accessToken","${auth_access_token}",{"rules":[{"action":"allow","features":{"is_quick_play_multiplayer":true}}],"value":["--quickPlayMultiplayer","${quickPlayMultiplayer}"]}]}}"#).unwrap();
+        let mut installation = Installation { java: "java".into(), vanilla, loader: None, classpath: vec!["client.jar".into()], logging_argument: None };
+        let session = Session { profile: crate::auth::Profile { uuid: "test".into(), name: "Joueur".into(), skin: None, capes: vec![] }, minecraft_token: "synthetic-test-token".into(), expires_at: u64::MAX };
+        let paths = Paths::from_root(std::env::temp_dir().join("clover-arguments"));
+        let options = LaunchOptions { memory_mb: Some(4096), java_args: vec![], fullscreen: false, enabled_mods: None, disabled_personal_mods: vec![] };
+        let vanilla = build_arguments(&paths, &installation, &session, None, &options).unwrap();
+        assert!(vanilla.contains(&"net.minecraft.client.main.Main".into()));
+        assert!(!vanilla.contains(&"--quickPlayMultiplayer".into()));
+        assert!(vanilla.contains(&paths.game.to_string_lossy().into_owned()));
+        installation.loader = Some(serde_json::from_str(r#"{"id":"fabric-loader-test","mainClass":"net.fabricmc.loader.impl.launch.knot.KnotClient","arguments":{"jvm":["-Dfabric=true"]}}"#).unwrap());
+        let fabric = build_arguments(&paths, &installation, &session, None, &options).unwrap();
+        assert!(fabric.contains(&"net.fabricmc.loader.impl.launch.knot.KnotClient".into()));
+        assert!(fabric.contains(&"-Dfabric=true".into()));
+        assert!(!fabric.contains(&"--quickPlayMultiplayer".into()));
+        let clover = build_arguments(&paths, &installation, &session, Some("play.clovergames.fr"), &options).unwrap();
+        assert!(clover.windows(2).any(|pair| pair == ["--quickPlayMultiplayer", "play.clovergames.fr"]));
+        assert!(!clover.iter().any(|argument| argument.contains("${")));
+    }
 
     #[test]
     fn substitutes_every_placeholder() {

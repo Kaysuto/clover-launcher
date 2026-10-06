@@ -2,5 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    clover_launcher_lib::run()
+    if !clover_launcher_lib::run_game_window_helper() {
+        clover_launcher_lib::run()
+    }
 }

@@ -6,8 +6,7 @@ import { secondaryButton } from "@/lib/buttons";
 import { cn } from "@/lib/utils";
 import { ModIcon } from "@/components/ModIcon";
 import { ModPage } from "@/screens/ModPage";
-import { ModrinthDialog } from "@/screens/ModrinthDialog";
-import type { ModCategory, ModInfo, ModrinthPage, ModrinthProject, PersonalMod } from "@/types";
+import type { ModCategory, ModInfo, ModrinthProject, PersonalMod } from "@/types";
 
 const CATEGORIES: { id: ModCategory; title: string; hint: string }[] = [
   { id: "performance", title: "Performance", hint: "Plus d'images par seconde, moins de mémoire. Activés par défaut." },
@@ -20,6 +19,8 @@ export type ModsView = "catalogue" | "personal";
 export type OpenMod = { list: ModsView; id: string };
 
 type Props = {
+  catalogueVisible?: boolean;
+  instanceName?: string;
   view: ModsView;
   onView: (view: ModsView) => void;
   mods: ModInfo[];
@@ -31,15 +32,15 @@ type Props = {
   onUpdatePersonal: (id: string) => void;
   onRemovePersonal: (id: string) => void;
   onAddFiles: (files: File[]) => void;
-  /** Recherche Modrinth, installation d'un mod trouvé dans « Mes mods », page d'un mod. */
-  modrinth: {
-    search: (query: string, offset: number) => Promise<ModrinthPage>;
-    onInstall: (projectId: string) => Promise<void>;
-    project: (projectId: string) => Promise<ModrinthProject>;
-  };
+  /** Page Modrinth d'un mod. */
+  modrinth: { project: (projectId: string) => Promise<ModrinthProject> };
+  /** Ouvre la recherche Modrinth sur les mods. */
+  onSearch: () => void;
   onOpenLink: (url: string) => void;
   /** Page ouverte au premier rendu (maquettes). */
   defaultOpen?: OpenMod;
+  /** Onglet de la page d'une instance : sans titre ni marges d'écran. */
+  embedded?: boolean;
 };
 
 type ListProps = Props & { onOpen: (open: OpenMod) => void };
@@ -50,7 +51,8 @@ const usable = (mod: PersonalMod) => mod.status.kind === "ok";
 export function ModsScreen(props: Props) {
   const { view, mods, personal } = props;
   const [open, setOpen] = useState<OpenMod | null>(props.defaultOpen ?? null);
-  const main = useRef<HTMLElement>(null);
+  const main = useRef<HTMLDivElement>(null);
+  const Root = props.embedded ? "div" : "main";
   const catalogueOn = mods.filter((mod) => mod.enabled && mod.available).length;
   const personalOn = (personal ?? []).filter((mod) => mod.enabled && usable(mod)).length;
 
@@ -62,13 +64,17 @@ export function ModsScreen(props: Props) {
   const page = open && <Detail {...props} open={open} onBack={() => setOpen(null)} />;
 
   return (
-    <main ref={main} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-12 pt-8 pb-10">
+    <Root ref={main} className={props.embedded ? "flex flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto px-12 pt-8 pb-10"}>
       {page || (
       <>
+      {props.embedded ? (
+        <p className="text-[13px] text-muted-foreground">Ils s'appliquent au prochain lancement.</p>
+      ) : (
       <header className="flex flex-col gap-2">
         <h1 className="font-display text-[30px] leading-none">Mods</h1>
-        <p className="text-sm text-muted-foreground">Ils s'appliquent au prochain lancement.</p>
+        <p className="text-sm text-muted-foreground">{props.instanceName && `${props.instanceName} · `}Ils s'appliquent au prochain lancement.</p>
       </header>
+      )}
 
       {personal && (
       <div role="tablist" aria-label="Mods" className="mt-5 flex gap-1 self-start rounded-lg border border-border bg-[#100e0b] p-1">
@@ -77,7 +83,7 @@ export function ModsScreen(props: Props) {
             ["catalogue", "Catalogue Clover", catalogueOn],
             ["personal", "Mes mods", personalOn],
           ] as const
-        ).map(([id, label, count]) => (
+        ).filter(([id]) => props.catalogueVisible !== false || id === "personal").map(([id, label, count]) => (
           <button
             key={id}
             type="button"
@@ -99,7 +105,7 @@ export function ModsScreen(props: Props) {
       {view === "catalogue" || !personal ? <Catalogue {...props} onOpen={setOpen} /> : <Personal {...props} onOpen={setOpen} personal={personal} />}
       </>
       )}
-    </main>
+    </Root>
   );
 }
 
@@ -141,7 +147,7 @@ function Detail({ open, onBack, mods, personal, minecraftVersion, onToggle, onTo
       {...shared}
       project={mod.projectId}
       name={mod.name}
-      icon={null}
+      icon={mod.icon}
       version={mod.version}
       notice={text && <Notice tone={mod.status.kind === "update" ? "accent" : "error"}>{text}</Notice>}
       actions={
@@ -253,10 +259,9 @@ function statusText(mod: PersonalMod, minecraftVersion: string) {
   }
 }
 
-function Personal({ personal, minecraftVersion, onTogglePersonal, onUpdatePersonal, onRemovePersonal, onAddFiles, modrinth, onOpen }: ListProps & { personal: PersonalMod[] }) {
+function Personal({ personal, minecraftVersion, onTogglePersonal, onUpdatePersonal, onRemovePersonal, onAddFiles, onSearch, onOpen }: ListProps & { personal: PersonalMod[] }) {
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
-  const [searching, setSearching] = useState(false);
   const blocked = personal.filter((mod) => !usable(mod)).length;
 
   return (
@@ -287,7 +292,7 @@ function Personal({ personal, minecraftVersion, onTogglePersonal, onUpdatePerson
           {blocked > 0 && ` · ${blocked} ne peu${blocked > 1 ? "vent" : "t"} pas être chargé${blocked > 1 ? "s" : ""} en ${minecraftVersion}`}
         </p>
         <div className="flex gap-2">
-          <button type="button" onClick={() => setSearching(true)} className={secondaryButton}>
+          <button type="button" onClick={onSearch} className={secondaryButton}>
             <Search className="size-4" aria-hidden />
             Rechercher un mod
           </button>
@@ -333,6 +338,7 @@ function Personal({ personal, minecraftVersion, onTogglePersonal, onUpdatePerson
                   disabled={!usable(mod)}
                   onCheckedChange={(checked) => onTogglePersonal(mod.id, checked)}
                 />
+                <ModIcon src={mod.icon} className={cn("pointer-events-none relative", !usable(mod) && "opacity-60")} />
                 <div className={cn("relative flex min-w-0 flex-1 flex-col gap-0.5", mod.projectId && "pointer-events-none")}>
                   <label htmlFor={`personal-${mod.id}`} className={cn("flex items-baseline gap-2 text-sm font-semibold", !usable(mod) && "text-muted-foreground")}>
                     {mod.name}
@@ -362,14 +368,6 @@ function Personal({ personal, minecraftVersion, onTogglePersonal, onUpdatePerson
         </ul>
       )}
 
-      <ModrinthDialog
-        open={searching}
-        onOpenChange={setSearching}
-        minecraftVersion={minecraftVersion}
-        installed={new Set(personal.flatMap((mod) => (mod.projectId ? [mod.projectId] : [])))}
-        search={modrinth.search}
-        onInstall={modrinth.onInstall}
-      />
     </div>
   );
 }

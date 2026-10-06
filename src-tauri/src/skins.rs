@@ -14,16 +14,16 @@ use crate::auth::{self, Session};
 const PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profile";
 const DATA_URL_PREFIX: &str = "data:image/png;base64,";
 /// Personnages d'origine de Minecraft et forme de bras de leur version de référence.
-const DEFAULTS: [(&str, &str); 9] = [
-    ("steve", "classic"),
-    ("alex", "slim"),
-    ("ari", "classic"),
-    ("efe", "slim"),
-    ("kai", "classic"),
-    ("makena", "slim"),
-    ("noor", "slim"),
-    ("sunny", "classic"),
-    ("zuri", "classic"),
+const DEFAULTS: [(&str, &str, &[u8]); 9] = [
+    ("steve", "classic", include_bytes!("../assets/skins/steve.png")),
+    ("alex", "slim", include_bytes!("../assets/skins/alex.png")),
+    ("ari", "classic", include_bytes!("../assets/skins/ari.png")),
+    ("efe", "slim", include_bytes!("../assets/skins/efe.png")),
+    ("kai", "classic", include_bytes!("../assets/skins/kai.png")),
+    ("makena", "slim", include_bytes!("../assets/skins/makena.png")),
+    ("noor", "slim", include_bytes!("../assets/skins/noor.png")),
+    ("sunny", "classic", include_bytes!("../assets/skins/sunny.png")),
+    ("zuri", "classic", include_bytes!("../assets/skins/zuri.png")),
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -117,20 +117,23 @@ pub fn remove(root: &Path, id: &str) -> Result<()> {
     }
 }
 
-/// Skins d'origine, lus dans le client installé ; vide tant que Minecraft n'est pas installé.
-pub fn defaults(client_jar: &Path) -> Vec<SkinEntry> {
-    let Ok(file) = std::fs::File::open(client_jar) else { return Vec::new() };
-    let Ok(mut archive) = zip::ZipArchive::new(file) else { return Vec::new() };
+/// Skins du client installé, avec les textures embarquées en repli dès le premier démarrage.
+pub fn defaults(client_jar: Option<&Path>) -> Vec<SkinEntry> {
+    let mut archive = client_jar.and_then(|path| std::fs::File::open(path).ok()).and_then(|file| zip::ZipArchive::new(file).ok());
     DEFAULTS
         .iter()
-        .filter_map(|(name, model)| {
+        .map(|(name, model, fallback)| {
             let folder = if *model == "slim" { "slim" } else { "wide" };
-            let mut entry = archive.by_name(&format!("assets/minecraft/textures/entity/player/{folder}/{name}.png")).ok()?;
-            let mut bytes = Vec::new();
-            entry.read_to_end(&mut bytes).ok()?;
+            let bytes = archive.as_mut().and_then(|archive| {
+                let entry = archive.by_name(&format!("assets/minecraft/textures/entity/player/{folder}/{name}.png")).ok()?;
+                let mut bytes = Vec::new();
+                entry.take(256 * 1024 + 1).read_to_end(&mut bytes).ok()?;
+                validate(&bytes).ok()?;
+                Some(bytes)
+            });
             let mut title = name.to_string();
             title[..1].make_ascii_uppercase();
-            Some(SkinEntry { id: format!("default-{name}"), name: title, model: (*model).into(), texture: data_url(&bytes) })
+            SkinEntry { id: format!("default-{name}"), name: title, model: (*model).into(), texture: data_url(bytes.as_deref().unwrap_or(fallback)) }
         })
         .collect()
 }
@@ -240,6 +243,50 @@ mod tests {
         assert!(validate(&png(64, 32)).is_ok());
         assert!(validate(&png(128, 128)).is_err());
         assert!(validate(b"pas une image du tout, vraiment").is_err());
+    }
+
+    #[test]
+    fn defaults_are_available_without_minecraft_or_a_manifest() {
+        let root = std::env::temp_dir().join(format!("clover-default-skins-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let missing = root.join("missing.jar");
+        let broken = root.join("broken.jar");
+        std::fs::write(&broken, b"client incomplet").unwrap();
+        for path in [None, Some(missing.as_path()), Some(broken.as_path())] {
+            let skins = defaults(path);
+            assert_eq!(skins.len(), 9);
+            assert_eq!(skins[0].id, "default-steve");
+            assert_eq!(skins[0].model, "classic");
+            assert_eq!(skins[1].id, "default-alex");
+            assert_eq!(skins[1].model, "slim");
+            for skin in skins {
+                let bytes = STANDARD.decode(skin.texture.strip_prefix(DATA_URL_PREFIX).unwrap()).unwrap();
+                validate(&bytes).unwrap();
+                assert_eq!(u32::from_be_bytes(bytes[20..24].try_into().unwrap()), 64);
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn installed_textures_take_priority_with_fallback_for_missing_or_invalid_entries() {
+        use std::io::Write;
+        let jar = std::env::temp_dir().join(format!("clover-skin-client-{}.jar", std::process::id()));
+        let mut archive = zip::ZipWriter::new(std::fs::File::create(&jar).unwrap());
+        let options = zip::write::SimpleFileOptions::default();
+        archive.start_file("assets/minecraft/textures/entity/player/wide/steve.png", options).unwrap();
+        let replacement = png(64, 64);
+        archive.write_all(&replacement).unwrap();
+        archive.start_file("assets/minecraft/textures/entity/player/slim/alex.png", options).unwrap();
+        archive.write_all(b"invalide").unwrap();
+        archive.finish().unwrap();
+        let skins = defaults(Some(&jar));
+        let bundled = defaults(None);
+        assert_eq!(skins.len(), 9);
+        assert_eq!(skins[0].texture, data_url(&replacement));
+        assert_eq!(skins[1].texture, bundled[1].texture);
+        assert_eq!(skins[2].texture, bundled[2].texture);
+        std::fs::remove_file(jar).unwrap();
     }
 
     #[test]

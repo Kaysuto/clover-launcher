@@ -1,13 +1,23 @@
-import { House, Puzzle, Shirt, SquareTerminal } from "lucide-react";
+import { House, Puzzle, Shirt, SquareTerminal, Boxes } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { Tab } from "@/types";
 
-const ITEMS: { id: Tab; label: string; Icon: typeof House }[] = [
-  { id: "home", label: "Accueil", Icon: House },
-  { id: "mods", label: "Mods", Icon: Puzzle },
-  { id: "skins", label: "Skins", Icon: Shirt },
-  { id: "console", label: "Console", Icon: SquareTerminal },
+export const TAB_LABELS: Record<Tab, string> = {
+  home: "Accueil",
+  instances: "Instances",
+  mods: "Mods",
+  skins: "Skins",
+  console: "Console",
+  settings: "Paramètres",
+};
+
+const ITEMS: { id: Exclude<Tab, "settings">; Icon: typeof House }[] = [
+  { id: "home", Icon: House },
+  { id: "instances", Icon: Boxes },
+  { id: "mods", Icon: Puzzle },
+  { id: "skins", Icon: Shirt },
+  { id: "console", Icon: SquareTerminal },
 ];
 
 /**
@@ -17,7 +27,7 @@ const ITEMS: { id: Tab; label: string; Icon: typeof House }[] = [
 export function SideNav({ tab, onTab }: { tab: Tab; onTab: (tab: Tab) => void }) {
   return (
     <nav aria-label="Sections" className="flex w-[76px] shrink-0 flex-col items-center gap-3 border-r border-border bg-[#100e0b] pt-4">
-      {ITEMS.map(({ id, label, Icon }) => {
+      {ITEMS.map(({ id, Icon }) => {
         const active = tab === id;
         return (
           <button
@@ -37,7 +47,7 @@ export function SideNav({ tab, onTab }: { tab: Tab; onTab: (tab: Tab) => void })
             >
               <Icon className="size-[22px]" strokeWidth={2.25} aria-hidden />
             </span>
-            <span className={cn("text-[11px] font-semibold", active ? "text-foreground" : "text-muted-foreground group-hover:text-foreground")}>{label}</span>
+            <span className={cn("text-[11px] font-semibold", active ? "text-foreground" : "text-muted-foreground group-hover:text-foreground")}>{TAB_LABELS[id]}</span>
           </button>
         );
       })}

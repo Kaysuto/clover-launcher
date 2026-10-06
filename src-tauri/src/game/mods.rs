@@ -12,6 +12,19 @@ use super::manifest::Manifest;
 use super::personal;
 use super::{GameError, Result};
 
+/// Instances sans catalogue Clover : remplacer uniquement les jars dans le dossier géré.
+pub async fn sync_personal(mods_dir: &Path, personal: &[PathBuf]) -> Result<()> {
+    tokio::fs::create_dir_all(mods_dir).await?;
+    let mut entries = tokio::fs::read_dir(mods_dir).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        if entry.path().extension().is_some_and(|ext| ext.eq_ignore_ascii_case("jar")) { tokio::fs::remove_file(entry.path()).await?; }
+    }
+    for path in personal {
+        if let Some(name) = path.file_name() { tokio::fs::copy(path, mods_dir.join(name)).await?; }
+    }
+    Ok(())
+}
+
 pub async fn sync(
     http: &reqwest::Client,
     mods_dir: &Path,
@@ -62,4 +75,28 @@ pub async fn sync(
         tokio::fs::copy(path, mods_dir.join(name)).await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod instance_tests {
+    use super::*;
+    #[tokio::test]
+    async fn switching_shared_instances_replaces_only_active_jars() {
+        let root = std::env::temp_dir().join(format!("clover-mod-switch-{}", rand::random::<u64>()));
+        let active = root.join("game/mods");
+        let source = root.join("personal-mods");
+        std::fs::create_dir_all(&active).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(active.join("clover.jar"), b"catalogue").unwrap();
+        std::fs::write(active.join("note.txt"), b"keep").unwrap();
+        std::fs::write(source.join("fabric.jar"), b"personal").unwrap();
+        sync_personal(&active, &[source.join("fabric.jar")]).await.unwrap();
+        assert!(!active.join("clover.jar").exists());
+        assert!(active.join("fabric.jar").exists());
+        sync_personal(&active, &[]).await.unwrap();
+        assert!(!active.join("fabric.jar").exists());
+        assert!(source.join("fabric.jar").exists());
+        assert!(active.join("note.txt").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

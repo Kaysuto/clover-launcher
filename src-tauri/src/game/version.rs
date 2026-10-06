@@ -12,6 +12,7 @@ use serde::Deserialize;
 pub struct VersionJson {
     pub id: String,
     pub main_class: Option<String>,
+    pub minecraft_arguments: Option<String>,
     #[serde(default)]
     pub arguments: Arguments,
     #[serde(default)]
@@ -76,12 +77,23 @@ pub struct Library {
     pub sha1: Option<String>,
     pub size: Option<u64>,
     #[serde(default)]
+    pub natives: std::collections::HashMap<String, String>,
+    pub extract: Option<Extraction>,
+    #[serde(default)]
     pub rules: Vec<Rule>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct LibraryDownloads {
     pub artifact: Option<Artifact>,
+    #[serde(default)]
+    pub classifiers: std::collections::HashMap<String, Artifact>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Extraction {
+    #[serde(default)]
+    pub exclude: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -197,6 +209,11 @@ pub fn expand(arguments: &[Argument], features: &[&str]) -> Vec<String> {
 }
 
 impl Library {
+    pub fn native(&self) -> Option<ResolvedLibrary> {
+        let classifier = self.natives.get(OS_NAME)?.replace("${arch}", if cfg!(target_pointer_width = "64") { "64" } else { "32" });
+        let artifact = self.downloads.as_ref()?.classifiers.get(&classifier)?;
+        Some(ResolvedLibrary { path: artifact.path.clone().or_else(|| maven_path(&format!("{}:{classifier}", self.name)))?, url: artifact.url.clone(), sha1: artifact.sha1.clone(), size: artifact.size })
+    }
     pub fn resolve(&self) -> Option<ResolvedLibrary> {
         if let Some(artifact) = self.downloads.as_ref().and_then(|d| d.artifact.as_ref()) {
             return Some(ResolvedLibrary {

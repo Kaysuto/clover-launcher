@@ -1,4 +1,4 @@
-import { FolderOpen, Gamepad2, HardDrive, Info, Palette, Plug, Plus, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
+import { FolderInput, FolderOpen, Gamepad2, HardDrive, Info, Palette, Plug, Plus, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -69,6 +69,8 @@ type Props = {
   onResetRecommended: () => void;
   storage: { parts: StoragePart[]; reclaimable: number; gameDir: string };
   onOpenGameDir: () => void;
+  /** Import depuis les autres launchers (mêmes écrans qu'au premier lancement). */
+  onImport: () => void;
   onChangeGameDir: () => void;
   onCleanStorage: () => void;
   steam: { state: SteamState; onAdd: () => void; onRemove: () => void };
@@ -86,7 +88,10 @@ const TABS: { id: SettingsTab; label: string; Icon: LucideIcon }[] = [
   { id: "about", label: "À propos", Icon: Info },
 ];
 
+export const settingsTabLabel = (id: SettingsTab) => TABS.find((item) => item.id === id)?.label ?? "";
+
 const number = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 });
+const built = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(__BUILD_TIME__));
 
 /** 1 610 612 736 → « 1,5 Go ». */
 export function formatBytes(bytes: number) {
@@ -358,7 +363,7 @@ function Game({ settings, onChange, system, onResetRecommended, hidden = [] }: P
   );
 }
 
-function Storage({ storage, onOpenGameDir, onChangeGameDir, onCleanStorage, hidden = [] }: Props) {
+function Storage({ storage, onOpenGameDir, onImport, onChangeGameDir, onCleanStorage, hidden = [] }: Props) {
   const total = storage.parts.reduce((sum, part) => sum + part.bytes, 0);
   return (
     <>
@@ -403,6 +408,12 @@ function Storage({ storage, onOpenGameDir, onChangeGameDir, onCleanStorage, hidd
         {!hidden.includes("changeGameDir") && (
           <p className="text-xs text-muted-foreground">Changer de dossier déplace les fichiers : l'opération peut durer plusieurs minutes.</p>
         )}
+      </Row>
+      <Row title="Autres launchers" hint="Launcher officiel, Modrinth App, Prism Launcher, MultiMC, CurseForge. Leurs fichiers sont copiés, jamais déplacés.">
+        <button type="button" onClick={onImport} className={`${secondaryButton} self-start`}>
+          <FolderInput className="size-4" aria-hidden />
+          Importer des réglages, serveurs ou mondes…
+        </button>
       </Row>
     </>
   );
@@ -461,6 +472,7 @@ function About({ about, onOpenLink }: Pick<Props, "about" | "onOpenLink">) {
           Clover Launcher <span className="font-pixel text-[12px] text-foreground">{about.launcher}</span> · Minecraft{" "}
           <span className="font-pixel text-[12px] text-foreground">{about.minecraft}</span> · Fabric <span className="font-pixel text-[12px] text-foreground">{about.fabric}</span>
         </p>
+        <p className="text-xs text-muted-foreground">Compilé le {built}</p>
       </Row>
       <Row title="Aide" hint="Une question, un plantage, une suggestion.">
         <div className="flex flex-wrap gap-2">

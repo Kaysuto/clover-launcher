@@ -17,19 +17,23 @@ const FABRIC_META_URL: &str = "https://meta.fabricmc.net/v2/versions/loader";
 pub struct Installation {
     pub java: PathBuf,
     pub vanilla: VersionJson,
-    pub loader: VersionJson,
+    pub loader: Option<VersionJson>,
     pub classpath: Vec<PathBuf>,
     pub logging_argument: Option<String>,
 }
 
 #[derive(Deserialize)]
-struct VersionManifest {
-    versions: Vec<ManifestEntry>,
+pub(crate) struct VersionManifest {
+    pub versions: Vec<ManifestEntry>,
 }
 
 #[derive(Deserialize)]
-struct ManifestEntry {
-    id: String,
+pub(crate) struct ManifestEntry {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(rename = "releaseTime")]
+    pub release_time: String,
     url: String,
     sha1: String,
 }
@@ -51,9 +55,32 @@ pub async fn install(
     manifest: &Manifest,
     progress: &(dyn Fn(Progress) + Sync),
 ) -> Result<Installation> {
-    let minecraft = &manifest.minecraft.version;
+    install_version(http, paths, &manifest.minecraft.version, Some(&manifest.fabric.loader), progress).await
+}
+
+pub(crate) async fn version_manifest(http: &reqwest::Client) -> Result<VersionManifest> {
+    Ok(http.get(VERSION_MANIFEST_URL).send().await?.error_for_status()?.json().await?)
+}
+
+pub(crate) async fn install_version(
+    http: &reqwest::Client,
+    paths: &Paths,
+    minecraft: &str,
+    fabric: Option<&str>,
+    progress: &(dyn Fn(Progress) + Sync),
+) -> Result<Installation> {
+    crate::instances::validate_version_id(minecraft)?;
+    if let Some(fabric) = fabric { crate::instances::validate_version_id(fabric)?; }
     let vanilla = vanilla_json(http, paths, minecraft).await?;
-    let loader = fabric_json(http, paths, minecraft, &manifest.fabric.loader).await?;
+    let loader = match fabric {
+        Some(fabric) => Some(fabric_json(http, paths, minecraft, fabric).await?),
+        None => None,
+    };
+    crate::instances::validate_version_id(&vanilla.id)?;
+    if let Some(loader) = &loader { crate::instances::validate_version_id(&loader.id)?; }
+    if vanilla.arguments.game.is_empty() && vanilla.minecraft_arguments.is_none() {
+        return Err(GameError::InvalidVersion("arguments du jeu absents".into()));
+    }
 
     let component = vanilla
         .java_version
@@ -67,25 +94,32 @@ pub async fn install(
     // Bibliothèques, client et configuration des logs
     let mut downloads = Vec::new();
     let mut classpath = Vec::new();
-    for library in merge_libraries(&loader.libraries, &vanilla.libraries) {
+    let mut native_archives = Vec::new();
+    for library in merge_libraries(loader.as_ref().map_or(&[], |loader| loader.libraries.as_slice()), &vanilla.libraries) {
         if !allowed(&library.rules, &[]) {
             continue;
         }
-        let Some(resolved) = library.resolve() else { continue };
-        let sha1 = match resolved.sha1 {
+        if let Some(resolved) = library.resolve() {
+            let sha1 = match resolved.sha1 {
             Some(sha1) => sha1,
             // fabric-loader est publié sans empreinte dans le profil : la lire sur le dépôt Maven.
             None => maven_sha1(http, &resolved.url).await?,
         };
         let path = paths.libraries.join(&resolved.path);
         classpath.push(path.clone());
-        downloads.push(Download {
+            downloads.push(Download {
             url: resolved.url,
             path,
             checksum: Some(Checksum::Sha1(sha1)),
             size: resolved.size,
             executable: false,
-        });
+            });
+        }
+        if let Some(native) = library.native() {
+            let path = paths.libraries.join(&native.path);
+            native_archives.push((path.clone(), library.extract.as_ref().map_or_else(Vec::new, |extract| extract.exclude.clone())));
+            downloads.push(Download { url: native.url, path, checksum: native.sha1.map(Checksum::Sha1), size: native.size, executable: false });
+        }
     }
 
     let client = &vanilla
@@ -116,6 +150,10 @@ pub async fn install(
         });
     }
     download_all(http, downloads, &|done, total| progress(Progress { phase: "libraries", done, total })).await?;
+    if !native_archives.is_empty() {
+        let native_dir = paths.natives.join(loader.as_ref().map_or(vanilla.id.as_str(), |loader| &loader.id));
+        extract_natives(&native_archives, &native_dir)?;
+    }
 
     // Assets, adressés par leur empreinte : un même fichier peut servir plusieurs noms.
     let index_ref = vanilla
@@ -191,4 +229,103 @@ async fn maven_sha1(http: &reqwest::Client, url: &str) -> Result<String> {
 
 async fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
     Ok(serde_json::from_slice(&tokio::fs::read(path).await?)?)
+}
+
+/// Archives vérifiées par Mojang. Les chemins ZIP restent confinés au dossier de cette version.
+fn extract_natives(archives: &[(PathBuf, Vec<String>)], dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(dir)?;
+    for (path, excluded) in archives {
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(path)?)
+            .map_err(|_| GameError::InvalidVersion("archive de bibliothèques natives illisible".into()))?;
+        for index in 0..archive.len() {
+            let mut entry = archive.by_index(index).map_err(|_| GameError::InvalidVersion("bibliothèque native illisible".into()))?;
+            if entry.is_dir() || entry.name().starts_with("META-INF/") || excluded.iter().any(|prefix| entry.name().starts_with(prefix)) { continue; }
+            let relative = entry.enclosed_name().ok_or_else(|| GameError::InvalidVersion("chemin de bibliothèque native invalide".into()))?;
+            let target = dir.join(relative);
+            if let Some(parent) = target.parent() { std::fs::create_dir_all(parent)?; }
+            std::io::copy(&mut entry, &mut std::fs::File::create(target)?)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod instance_tests {
+    use super::*;
+
+    #[test]
+    fn native_extraction_excludes_metadata_and_refuses_traversal() {
+        use std::io::Write;
+        let root = std::env::temp_dir().join(format!("clover-native-test-{}", rand::random::<u64>()));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("native.jar");
+        let mut archive = zip::ZipWriter::new(std::fs::File::create(&file).unwrap());
+        for name in ["META-INF/manifest", "ignore/notice", "native.dll"] {
+            archive.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+            archive.write_all(b"native").unwrap();
+        }
+        archive.finish().unwrap();
+        let natives = root.join("natives");
+        extract_natives(&[(file.clone(), vec!["ignore/".into()])], &natives).unwrap();
+        assert_eq!(std::fs::read(natives.join("native.dll")).unwrap(), b"native");
+        assert!(!natives.join("META-INF").exists() && !natives.join("ignore").exists());
+        let mut archive = zip::ZipWriter::new(std::fs::File::create(&file).unwrap());
+        archive.start_file("../escape.dll", zip::write::SimpleFileOptions::default()).unwrap();
+        archive.write_all(b"unsafe").unwrap(); archive.finish().unwrap();
+        assert!(extract_natives(&[(file, vec![])], &natives).is_err());
+        assert!(!root.join("escape.dll").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "anciens profils Mojang, réseau requis"]
+    async fn legacy_and_modern_vanilla_profiles_build_launchable_arguments() {
+        let root = std::env::temp_dir().join(format!("clover-legacy-profile-{}", rand::random::<u64>()));
+        let paths = Paths::from_root(root.clone());
+        let http = super::super::download::client();
+        let session = crate::auth::Session { profile: crate::auth::Profile { uuid: "test".into(), name: "Joueur".into(), skin: None, capes: vec![] }, minecraft_token: "synthetic-test-token".into(), expires_at: u64::MAX };
+        let options = crate::game::LaunchOptions { memory_mb: Some(2048), java_args: vec![], fullscreen: false, enabled_mods: None, disabled_personal_mods: vec![] };
+        for id in ["1.8.9", "1.12.2", "1.16.5", "1.17.1", "1.18.2", "1.19.4", "1.20.1", "1.21.11", "26.1.2"] {
+            let vanilla = vanilla_json(&http, &paths, id).await.unwrap();
+            assert!(vanilla.java_version.is_some());
+            let classpath: Vec<_> = vanilla.libraries.iter().filter(|library| allowed(&library.rules, &[])).filter_map(|library| library.resolve()).map(|library| paths.libraries.join(library.path)).collect();
+            if matches!(id, "1.8.9" | "1.12.2" | "1.16.5" | "1.17.1" | "1.18.2") { assert!(vanilla.libraries.iter().any(|library| library.native().is_some()), "{id}"); }
+            let installation = Installation { java: "java".into(), vanilla, loader: None, classpath, logging_argument: None };
+            let arguments = crate::game::launch::build_arguments(&paths, &installation, &session, None, &options).unwrap();
+            assert!(!arguments.iter().any(|argument| argument.contains("${")), "{id}");
+            assert!(arguments.contains(&"-cp".into()));
+            assert!(arguments.contains(&"--gameDir".into()));
+            assert!(!arguments.contains(&"--quickPlayMultiplayer".into()));
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
+    #[ignore = "profils officiels Mojang et Fabric, réseau requis"]
+    async fn reads_personal_profiles_and_builds_real_launch_arguments() {
+        let root = std::env::temp_dir().join(format!("clover-profile-proof-{}", rand::random::<u64>()));
+        let paths = Paths::from_root(root.clone());
+        let http = super::super::download::client();
+        let vanilla = vanilla_json(&http, &paths, "1.20.1").await.unwrap();
+        let loaders = crate::instances::loaders(&root, "1.20.1").await.unwrap();
+        let fabric = fabric_json(&http, &paths, "1.20.1", &loaders[0]).await.unwrap();
+        assert_eq!(vanilla.id, "1.20.1");
+        assert!(!vanilla.arguments.jvm.is_empty());
+        assert!(!vanilla.arguments.game.is_empty());
+        assert!(vanilla.java_version.is_some());
+        assert!(fabric.main_class.as_ref().is_some_and(|class| class.contains("KnotClient")));
+        let libraries = merge_libraries(&fabric.libraries, &vanilla.libraries);
+        assert!(libraries.iter().filter(|library| allowed(&library.rules, &[])).all(|library| library.resolve().is_some()));
+        let classpath = libraries.iter().filter(|library| allowed(&library.rules, &[])).filter_map(|library| library.resolve()).map(|library| paths.libraries.join(library.path)).collect();
+        let mut installation = Installation { java: "java".into(), vanilla, loader: None, classpath, logging_argument: None };
+        let session = crate::auth::Session { profile: crate::auth::Profile { uuid: "test".into(), name: "Joueur".into(), skin: None, capes: vec![] }, minecraft_token: "synthetic-test-token".into(), expires_at: u64::MAX };
+        let options = crate::game::LaunchOptions { memory_mb: Some(4096), java_args: vec![], fullscreen: false, enabled_mods: None, disabled_personal_mods: vec![] };
+        let arguments = crate::game::launch::build_arguments(&paths, &installation, &session, None, &options).unwrap();
+        assert!(!arguments.iter().any(|argument| argument.contains("${")));
+        assert!(!arguments.contains(&"--quickPlayMultiplayer".into()));
+        installation.loader = Some(fabric);
+        let arguments = crate::game::launch::build_arguments(&paths, &installation, &session, None, &options).unwrap();
+        assert!(!arguments.iter().any(|argument| argument.contains("${")));
+        assert!(arguments.iter().any(|argument| argument.contains("KnotClient")));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

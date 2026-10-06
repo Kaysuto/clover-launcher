@@ -8,8 +8,9 @@ import { PlayButton } from "@/components/PlayButton";
 import { SkinViewer } from "@/components/SkinViewer";
 import { VersionPicker } from "@/components/VersionPicker";
 import { secondaryButton } from "@/lib/buttons";
+import { joinsServer } from "@/lib/instances";
 import { cn } from "@/lib/utils";
-import type { GameVersion, ModeStatus, NewsItem, PlayState, SkinLook } from "@/types";
+import type { InstanceEntry, ModeStatus, NewsItem, PlayState, SkinLook } from "@/types";
 
 type Props = {
   look: SkinLook;
@@ -21,12 +22,14 @@ type Props = {
   play: PlayState;
   /** Sans argument : la destination de « Jouer ». Avec un mode : Quick Play sur ce mode. */
   onPlay: (mode?: string) => void;
-  versions: GameVersion[];
-  selectedVersion: string;
-  onSelectVersion: (id: string) => void;
-  /** Ouvre d'office le choix de version (planche des maquettes). */
+  instances: InstanceEntry[];
+  selectedInstance: string;
+  onSelectInstance: (id: string) => void;
+  onCreateInstance: () => void;
+  onManageInstances: () => void;
+  /** Ouvre d'office le choix d'instance (planche des maquettes). */
   versionOpen?: boolean;
-  /** Statut du serveur (Server List Ping) ; `null` pendant la première mesure. */
+  /** Disponibilité par ping, total des joueurs par mode ; `null` pendant la première mesure. */
   server: { online: boolean; players: number | null } | null;
   animateSkin?: boolean;
   modes: ModeStatus[];
@@ -41,9 +44,9 @@ type Props = {
 
 const date = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
 
-export function HomeScreen({ look, enabledMods, onManageMods, onOpenConsole, play, onPlay, versions, selectedVersion, onSelectVersion, versionOpen, server, animateSkin, modes, destination, otherServers, onPlayServer, news, onOpenLink }: Props) {
+export function HomeScreen({ look, enabledMods, onManageMods, onOpenConsole, play, onPlay, instances, selectedInstance, onSelectInstance, onCreateInstance, onManageInstances, versionOpen, server, animateSkin, modes, destination, otherServers, onPlayServer, news, onOpenLink }: Props) {
   const [featured, ...others] = news;
-  const current = versions.find((version) => version.id === selectedVersion) ?? versions[0];
+  const current = instances.find((entry) => entry.id === selectedInstance) ?? instances[0];
   const destinationName = modes.find((mode) => mode.id === destination)?.name ?? "Lobby";
 
   return (
@@ -78,8 +81,8 @@ export function HomeScreen({ look, enabledMods, onManageMods, onOpenConsole, pla
                 state={play}
                 onPlay={() => onPlay()}
                 onOpenConsole={onOpenConsole}
-                version={`Minecraft ${current.id} · ${current.loader.split(" ")[0]}${current.joinable ? "" : " · solo"}`}
-                picker={<VersionPicker versions={versions} selected={selectedVersion} onSelect={onSelectVersion} defaultOpen={versionOpen} />}
+                version={current ? `${current.name} · ${current.minecraft ?? "…"}${joinsServer(current) ? "" : " · solo"}` : "Chargement…"}
+                picker={<VersionPicker instances={instances} selected={selectedInstance} onSelect={onSelectInstance} onCreate={onCreateInstance} onManage={onManageInstances} defaultOpen={versionOpen} />}
               />
               <p className="mc-frame flex h-9 items-center gap-2 bg-card/90 px-3.5 text-xs text-muted-foreground [--mc-radius:6px]">
                 <span className={cn("size-2 rounded-full", server === null ? "animate-pulse bg-muted-foreground" : server.online ? "bg-primary" : "bg-destructive")} aria-hidden />
@@ -88,9 +91,9 @@ export function HomeScreen({ look, enabledMods, onManageMods, onOpenConsole, pla
                 ) : server.online ? (
                   <>
                     <span className="font-semibold text-foreground">En ligne</span>
-                    <span aria-hidden>·</span>
                     {server.players !== null && (
                       <>
+                        <span aria-hidden>·</span>
                         <span className="font-pixel text-[12px] text-foreground">{server.players}</span> joueurs
                       </>
                     )}

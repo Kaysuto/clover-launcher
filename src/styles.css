@@ -81,6 +81,29 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* Recherche des autres launchers : bloc qui balaie la barre par crans, bande qui parcourt le panneau. */
+@theme {
+  --animate-import-sweep: import-sweep 1.4s steps(20) infinite;
+  --animate-import-scanline: import-scanline 2.6s ease-in-out infinite;
+
+  @keyframes import-sweep {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(290%);
+    }
+  }
+  @keyframes import-scanline {
+    from {
+      transform: translateY(-100%);
+    }
+    to {
+      transform: translateY(340%);
+    }
+  }
+}
+
 /* Contour du jeu : 2 px quasi noirs, liseré intérieur décalé. */
 @utility mc-frame {
   border: 2px solid var(--mc-outline);
@@ -124,6 +147,50 @@
   image-rendering: pixelated;
 }
 
+/* Windows tray popup: transparent window around the rounded Clover surface. */
+html[data-surface="tray-menu"],
+html[data-surface="tray-menu"] body,
+html[data-surface="tray-menu"] #root {
+  background: transparent;
+  overflow: hidden;
+}
+.tray-menu-anchor {
+  position: absolute;
+  top: 0;
+  left: 8px;
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: 0;
+}
+.tray-menu-content {
+  box-sizing: border-box;
+  width: 260px;
+  padding: 6px;
+  border: 1px solid #3a352d;
+  border-radius: 14px;
+  background: #14120f;
+  color: #eee8db;
+  font-family: "Segoe UI", sans-serif;
+  font-size: 13px;
+}
+.tray-menu-item {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding-inline: 10px;
+  border-radius: 7px;
+  outline: none;
+  cursor: default;
+}
+.tray-menu-item[data-highlighted] { background: #2a251e; }
+.tray-menu-item[data-disabled] { color: #8a8477; }
+.tray-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: #3a352d;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -136,6 +203,9 @@
   body {
     @apply bg-background font-sans text-foreground antialiased;
     user-select: none;
+  }
+  img {
+    -webkit-user-drag: none;
   }
   :focus-visible {
     outline: 2px solid var(--ring);
@@ -169,6 +239,7 @@
     *::before,
     *::after {
       animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
   }
@@ -223,5 +294,6 @@
 .reduce-motion *::before,
 .reduce-motion *::after {
   animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
 }

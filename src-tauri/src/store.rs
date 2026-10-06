@@ -90,6 +90,11 @@ pub struct Stored {
     pub disabled_personal_mods: Vec<String>,
     /// Serveurs rejoints en jeu, du plus récent au plus ancien.
     pub recent_servers: Vec<RecentServer>,
+    pub instances: Vec<crate::instances::Instance>,
+    pub selected_instance: Option<String>,
+    pub expert_instances: bool,
+    pub last_launched_instance: Option<String>,
+    pub clover_last_played: Option<u64>,
 }
 
 impl Stored {
@@ -193,8 +198,16 @@ mod tests {
         let file = path(&dir);
         let mut stored = Stored::default();
         stored.settings.scale = 125;
+        let instance = crate::instances::Instance { id: "instance-0123456789abcdef0123456789abcdef".into(), name: "Survie".into(), separate: true, ..crate::instances::Instance::builtin() };
+        stored.selected_instance = Some(instance.id.clone());
+        stored.expert_instances = true;
+        stored.instances.push(instance);
         stored.save(&file).unwrap();
         assert_eq!(Stored::load(&file).settings.scale, 125);
+        let loaded = Stored::load(&file);
+        assert_eq!(loaded.instances[0].name, "Survie");
+        assert!(loaded.instances[0].separate && loaded.expert_instances);
+        assert_eq!(loaded.selected_instance, stored.selected_instance);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

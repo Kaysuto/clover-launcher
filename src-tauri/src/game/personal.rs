@@ -24,7 +24,10 @@ use super::{GameError, Result};
 pub struct PersonalMod {
     /// Nom du fichier, unique dans le dossier.
     pub id: String,
+    /// Nom du projet Modrinth, sinon celui que donne le `.jar`.
     pub name: String,
+    /// Logo du projet Modrinth, sinon celui du `.jar` (adresse `data:`).
+    pub icon: Option<String>,
     pub version: Option<String>,
     pub filename: String,
     /// Launcher d'origine pour un mod importé ; `None` pour un fichier ajouté à la main.
@@ -60,6 +63,42 @@ struct FabricMod {
     version: String,
     #[serde(default)]
     depends: HashMap<String, serde_json::Value>,
+    /// Chemin du logo dans le `.jar`, ou chemins par taille.
+    #[serde(default)]
+    icon: Option<serde_json::Value>,
+}
+
+/// Au-delà, le logo du `.jar` n'est pas repris : il voyagerait en entier vers l'interface.
+const MAX_ICON: u64 = 256 * 1024;
+
+impl FabricMod {
+    /// Chemin du logo, le plus grand s'il y en a plusieurs.
+    fn icon_path(&self) -> Option<String> {
+        match self.icon.as_ref()? {
+            serde_json::Value::String(path) => Some(path.clone()),
+            serde_json::Value::Object(sizes) => sizes
+                .iter()
+                .filter_map(|(size, path)| Some((size.parse::<u32>().ok()?, path.as_str()?)))
+                .max_by_key(|(size, _)| *size)
+                .map(|(_, path)| path.to_owned()),
+            _ => None,
+        }
+    }
+}
+
+/// Logo PNG déclaré par le `fabric.mod.json` du `.jar`, en adresse `data:`.
+fn jar_icon(path: &Path) -> Option<String> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let Jar::Fabric(fabric) = read_jar_file(path)? else { return None };
+    let icon = fabric.icon_path()?;
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(path).ok()?).ok()?;
+    let mut entry = archive.by_name(icon.trim_start_matches('/')).ok()?;
+    if entry.size() > MAX_ICON || !icon.to_ascii_lowercase().ends_with(".png") {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    entry.read_to_end(&mut bytes).ok()?;
+    Some(format!("data:image/png;base64,{}", STANDARD.encode(bytes)))
 }
 
 impl FabricMod {
@@ -148,6 +187,7 @@ pub async fn list(http: &reqwest::Client, dir: &Path, disabled: &[String], minec
             Some(PersonalMod {
                 id: filename.clone(),
                 name,
+                icon: None,
                 version,
                 enabled: !disabled.contains(&filename),
                 status: status(&jar, minecraft),
@@ -166,6 +206,25 @@ pub async fn list(http: &reqwest::Client, dir: &Path, disabled: &[String], minec
             }
         }
         Err(e) => eprintln!("[mods] Modrinth injoignable pour identifier les mods : {e}"),
+    }
+    // Le nom du `.jar` est souvent technique (« essential-container ») : celui de Modrinth est
+    // celui que le joueur a vu en l'installant.
+    let ids: Vec<String> = mods.iter().filter_map(|m| m.project_id.clone()).collect::<HashSet<_>>().into_iter().collect();
+    if !ids.is_empty() {
+        match modrinth::projects(http, &ids).await {
+            Ok(projects) => {
+                for m in &mut mods {
+                    if let Some(project) = m.project_id.as_ref().and_then(|id| projects.get(id)) {
+                        m.name = project.title.clone();
+                        m.icon = project.icon_url.clone();
+                    }
+                }
+            }
+            Err(e) => eprintln!("[mods] Modrinth injoignable pour les noms des mods : {e}"),
+        }
+    }
+    for m in mods.iter_mut().filter(|m| m.icon.is_none()) {
+        m.icon = jar_icon(&dir.join(&m.filename));
     }
 
     let outdated: Vec<usize> = (0..mods.len()).filter(|&index| matches!(mods[index].status, Status::Outdated { .. })).collect();
@@ -237,38 +296,93 @@ pub async fn update(http: &reqwest::Client, dir: &Path, id: &str, minecraft: &st
     Ok(filename)
 }
 
-/// Installe le projet Modrinth `project` pour `minecraft`, avec ses dépendances obligatoires
-/// absentes du dossier. Celles que fournit aussi le catalogue Clover sont écartées au lancement
-/// (voir `mods::sync`). Renvoie les fichiers ajoutés.
-pub async fn install(http: &reqwest::Client, dir: &Path, project: &str, minecraft: &str) -> Result<Vec<String>> {
+/// Fichiers du dossier et sélection Clover (`provided` : empreintes du manifeste signé), identifiés
+/// sur Modrinth par empreinte.
+async fn identify_present(http: &reqwest::Client, dir: &Path, provided: &[String]) -> Result<HashMap<String, modrinth::Version>> {
     std::fs::create_dir_all(dir)?;
-    let hashes: Vec<String> = jars(dir).iter().filter_map(|path| sha512(path).ok()).collect();
-    let mut present: HashSet<String> = if hashes.is_empty() {
-        HashSet::new()
-    } else {
-        modrinth::identify(http, hashes).await?.into_values().map(|version| version.project_id).collect()
-    };
+    let hashes: Vec<String> = jars(dir).iter().filter_map(|path| sha512(path).ok()).chain(provided.iter().cloned()).collect();
+    if hashes.is_empty() {
+        return Ok(HashMap::new());
+    }
+    modrinth::identify(http, hashes).await
+}
 
-    let mut queue = vec![project.to_owned()];
-    let mut added = Vec::new();
+/// Projets des dépendances obligatoires de `version`.
+async fn required(http: &reqwest::Client, version: &modrinth::Version) -> Result<Vec<String>> {
+    let mut projects = Vec::new();
+    for dependency in version.dependencies.iter().filter(|dependency| dependency.dependency_type == "required") {
+        match (&dependency.project_id, &dependency.version_id) {
+            (Some(project), _) => projects.push(project.clone()),
+            (None, Some(version)) => projects.push(modrinth::version_project(http, version).await?),
+            (None, None) => {}
+        }
+    }
+    Ok(projects)
+}
+
+/// Fichiers téléchargés, et projets sans version pour la version de Minecraft demandée (noms
+/// Modrinth une fois résolus par `install_dependencies`).
+#[derive(Debug, Default, Serialize)]
+pub struct Resolved {
+    pub added: Vec<String>,
+    pub missing: Vec<String>,
+}
+
+/// Télécharge les projets de `queue` pour `minecraft`, puis leurs dépendances obligatoires, sauf ceux
+/// de `present`. Un projet sans version compatible arrête tout si `strict`, sinon il est noté dans
+/// `missing`.
+async fn resolve(http: &reqwest::Client, dir: &Path, mut queue: Vec<String>, present: &mut HashSet<String>, minecraft: &str, strict: bool) -> Result<Resolved> {
+    let mut resolved = Resolved::default();
     while let Some(project) = queue.pop() {
-        let version = modrinth::compatible_version(http, &project, minecraft).await?.ok_or(GameError::NoUpdate)?;
+        if present.contains(&project) || resolved.missing.contains(&project) {
+            continue;
+        }
+        let Some(version) = modrinth::compatible_version(http, &project, "fabric", Some(minecraft)).await? else {
+            if strict {
+                return Err(GameError::NoUpdate);
+            }
+            resolved.missing.push(project);
+            continue;
+        };
         if !present.insert(version.project_id.clone()) {
             continue;
         }
-        added.push(download(http, dir, &version).await?);
-        for dependency in version.dependencies.iter().filter(|dependency| dependency.dependency_type == "required") {
-            let project = match (&dependency.project_id, &dependency.version_id) {
-                (Some(project), _) => project.clone(),
-                (None, Some(version)) => modrinth::version_project(http, version).await?,
-                (None, None) => continue,
-            };
-            if !present.contains(&project) {
-                queue.push(project);
+        resolved.added.push(download(http, dir, &version).await?);
+        queue.extend(required(http, &version).await?.into_iter().filter(|project| !present.contains(project)));
+    }
+    Ok(resolved)
+}
+
+/// Installe le projet Modrinth `project` pour `minecraft`, avec ses dépendances obligatoires
+/// absentes du dossier et de la sélection Clover (`provided` : empreintes du manifeste signé).
+/// Renvoie les fichiers ajoutés.
+pub async fn install(http: &reqwest::Client, dir: &Path, project: &str, minecraft: &str, provided: &[String]) -> Result<Vec<String>> {
+    let mut present: HashSet<String> = identify_present(http, dir, provided).await?.into_values().map(|version| version.project_id).collect();
+    Ok(resolve(http, dir, vec![project.to_owned()], &mut present, minecraft, true).await?.added)
+}
+
+/// Dépendances obligatoires des mods `files` du dossier (ajoutés à la main ou importés), d'après
+/// leur version sur Modrinth : celles qui manquent au dossier et à la sélection Clover sont
+/// téléchargées pour `minecraft`. Un mod inconnu de Modrinth est laissé tel quel.
+pub async fn install_dependencies(http: &reqwest::Client, dir: &Path, files: &[String], minecraft: &str, provided: &[String]) -> Result<Resolved> {
+    let identified = identify_present(http, dir, provided).await?;
+    let mut present: HashSet<String> = identified.values().map(|version| version.project_id.clone()).collect();
+    let mut queue = Vec::new();
+    for file in files {
+        let Some(version) = sha512(&dir.join(file)).ok().and_then(|hash| identified.get(&hash)) else { continue };
+        queue.extend(required(http, version).await?.into_iter().filter(|project| !present.contains(project)));
+    }
+    let mut resolved = resolve(http, dir, queue, &mut present, minecraft, false).await?;
+    if !resolved.missing.is_empty() {
+        if let Ok(projects) = modrinth::projects(http, &resolved.missing).await {
+            for project in &mut resolved.missing {
+                if let Some(summary) = projects.get(project) {
+                    project.clone_from(&summary.title);
+                }
             }
         }
     }
-    Ok(added)
+    Ok(resolved)
 }
 
 /// Mods du joueur à charger au lancement : activés, faits pour Fabric et pour `minecraft`.
@@ -280,7 +394,7 @@ pub fn loadable(dir: &Path, disabled: &[String], minecraft: &str) -> Vec<PathBuf
         .collect()
 }
 
-fn sha512(path: &Path) -> std::io::Result<String> {
+pub(crate) fn sha512(path: &Path) -> std::io::Result<String> {
     let bytes = std::fs::read(path)?;
     Ok(Sha512::digest(&bytes).iter().map(|byte| format!("{byte:02x}")).collect())
 }
@@ -433,15 +547,57 @@ mod tests {
     #[ignore]
     async fn installs_from_modrinth_with_dependencies() {
         let http = crate::game::download::client();
-        let page = modrinth::search(&http, "minimap", "26.2", 0).await.unwrap();
+        let page = modrinth::search(&http, modrinth::Kind::Mod, "minimap", "26.2", 0).await.unwrap();
         assert!(page.hits.iter().any(|hit| hit.slug == "xaeros-minimap"));
         let dir = std::env::temp_dir().join(format!("clover-modrinth-{}", std::process::id()));
-        let added = install(&http, &dir, "xaeros-minimap", "26.2").await.unwrap();
+        let added = install(&http, &dir, "xaeros-minimap", "26.2", &[]).await.unwrap();
         println!("{added:?}");
         assert!(added.len() >= 2);
-        assert!(install(&http, &dir, "xaeros-minimap", "26.2").await.unwrap().is_empty());
+        assert!(install(&http, &dir, "xaeros-minimap", "26.2", &[]).await.unwrap().is_empty());
         assert_eq!(loadable(&dir, &[], "26.2").len(), added.len());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Réseau : un mod ajouté seul (AppleSkin) récupère Fabric API, sauf si la sélection Clover la
+    /// fournit ; relancé, rien n'est retéléchargé.
+    #[tokio::test]
+    #[ignore]
+    async fn added_mod_gets_its_required_dependencies() {
+        let http = crate::game::download::client();
+        let dir = std::env::temp_dir().join(format!("clover-dependencies-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let appleskin = modrinth::compatible_version(&http, "appleskin", "fabric", Some("26.2")).await.unwrap().unwrap();
+        let file = download(&http, &dir, &appleskin).await.unwrap();
+        let fabric_api = modrinth::compatible_version(&http, "fabric-api", "fabric", Some("26.2")).await.unwrap().unwrap();
+        let provided = fabric_api.primary_file().unwrap().hashes["sha512"].clone();
+
+        let skipped = install_dependencies(&http, &dir, std::slice::from_ref(&file), "26.2", &[provided]).await.unwrap();
+        assert!(skipped.added.is_empty() && skipped.missing.is_empty(), "{skipped:?}");
+        let resolved = install_dependencies(&http, &dir, std::slice::from_ref(&file), "26.2", &[]).await.unwrap();
+        println!("{resolved:?}");
+        assert!(resolved.added.iter().any(|name| name.starts_with("fabric-api")), "{resolved:?}");
+        assert!(install_dependencies(&http, &dir, &[file], "26.2", &[]).await.unwrap().added.is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Réseau : sélection Clover reconnue avant toute installation locale, par ID et par slug ;
+    /// Fabric API déjà fournie n'est pas téléchargée comme dépendance d'un mod personnel.
+    #[tokio::test]
+    #[ignore]
+    async fn skips_clover_mods_and_dependencies_before_first_game_install() {
+        let http = crate::game::download::client();
+        let dir = std::env::temp_dir().join(format!("clover-modrinth-provided-{}", std::process::id()));
+        let sodium = modrinth::compatible_version(&http, "sodium", "fabric", Some("26.2")).await.unwrap().unwrap();
+        let fabric = modrinth::compatible_version(&http, "fabric-api", "fabric", Some("26.2")).await.unwrap().unwrap();
+        let provided = vec![sodium.primary_file().unwrap().hashes["sha512"].clone(), fabric.primary_file().unwrap().hashes["sha512"].clone()];
+        for project in ["sodium", sodium.project_id.as_str()] {
+            assert!(install(&http, &dir, project, "26.2", &provided).await.unwrap().is_empty());
+            assert!(jars(&dir).is_empty());
+        }
+        let added = install(&http, &dir, "xaeros-minimap", "26.2", &provided).await.unwrap();
+        assert_eq!(added.len(), 1, "seule la minimap manque : {added:?}");
+        assert_eq!(jars(&dir).len(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

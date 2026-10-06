@@ -1,0 +1,1191 @@
+//! Import depuis les autres launchers (CLO-281, SPEC §3.5 bis).
+//!
+//! Détecte les installations du launcher officiel, de Modrinth App, de Prism Launcher / MultiMC et
+//! de CurseForge, puis copie dans le dossier de l'instance Clover ce que le joueur choisit. Copie
+//! seule : les autres launchers ne sont jamais modifiés. Seuls leurs fichiers de profils et de jeu
+//! sont lus, jamais leurs comptes ni leurs jetons (`launcher_accounts*.json`,
+//! `launcher_msa_credentials*`, `accounts.json`, `app.db`). Les mods du catalogue, reconnus par
+//! leur empreinte, sont activés par l'interface plutôt que copiés ; les autres mods Fabric sont
+//! copiés dans « Mes mods » de l'instance Clover, avec les réglages des mods (`config/`).
+
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::SystemTime;
+
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+use crate::{game, instances, AppState};
+
+/// Dernière détection, gardée pour la session : une nouvelle recherche ne relit que les mods
+/// ajoutés ou modifiés et ne demande à Modrinth que les empreintes inconnues.
+#[derive(Default)]
+pub struct Detected(Mutex<Cache>);
+
+#[derive(Default)]
+pub struct Cache {
+    /// Installations trouvées : l'import n'accepte que celles-ci.
+    installations: Vec<Found>,
+    /// Mods déjà lus, par fichier.
+    mods: HashMap<PathBuf, (Stamp, ModFile)>,
+    /// Réponses de Modrinth par empreinte : projet, ou `None` pour un fichier qu'il ne connaît pas.
+    projects: HashMap<String, Option<String>>,
+}
+
+#[derive(Clone)]
+struct Found {
+    dir: PathBuf,
+    /// Mods à copier dans « Mes mods ».
+    personal: Vec<String>,
+    /// Mods du catalogue à activer : ils comptent comme présents pour les dépendances.
+    catalogue: Vec<String>,
+}
+
+/// Taille et date de modification : un `.jar` qui n'a pas changé n'est pas relu.
+type Stamp = (u64, Option<SystemTime>);
+
+fn stamp(path: &Path) -> Option<Stamp> {
+    let metadata = fs::metadata(path).ok()?;
+    Some((metadata.len(), metadata.modified().ok()))
+}
+
+struct Source {
+    launcher: &'static str,
+    name: String,
+    minecraft: Option<String>,
+    loader: Option<String>,
+    /// Dossier du jeu (`options.txt`, `saves/`…).
+    dir: PathBuf,
+}
+
+/// Ce qu'une installation contient, ou ce qu'un import a copié. Mêmes noms que le front.
+#[derive(Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Content {
+    options: bool,
+    servers: usize,
+    resource_packs: usize,
+    shader_packs: usize,
+    screenshots: usize,
+    worlds: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogueMod {
+    id: String,
+    name: String,
+}
+
+/// Installation trouvée. Mêmes noms que le type `DetectedInstance` du front.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Installation {
+    id: String,
+    launcher: &'static str,
+    name: String,
+    minecraft: Option<String>,
+    loader: Option<String>,
+    path: String,
+    content: Content,
+    /// Mods du catalogue reconnus par leur empreinte et pas encore activés.
+    catalogue_mods: Vec<CatalogueMod>,
+    /// Autres mods Fabric : copiés dans « Mes mods » si le joueur le demande.
+    personal_mods: Vec<String>,
+    /// Mods faits pour un autre loader (Forge, NeoForge, Quilt) : pas repris.
+    other_mods: Vec<String>,
+}
+
+/// Éléments cochés dans l'interface. `options` reprend aussi les réglages des mods (`config/`) ;
+/// `mods` (mods du catalogue) est activé par l'interface, il ne sert ici qu'aux dépendances.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Choices {
+    options: bool,
+    mods: bool,
+    personal_mods: bool,
+    servers: bool,
+    resource_packs: bool,
+    shader_packs: bool,
+    screenshots: bool,
+    worlds: bool,
+}
+
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Imported {
+    #[serde(flatten)]
+    copied: Content,
+    /// Mods copiés dans « Mes mods ».
+    mods: usize,
+    /// Dépendances obligatoires de ces mods téléchargées depuis Modrinth.
+    dependencies: usize,
+    /// Dépendances sans version pour Minecraft du serveur : les mods qui les demandent planteront.
+    missing_dependencies: usize,
+    /// Modrinth injoignable : les dépendances n'ont pas pu être vérifiées.
+    dependencies_unchecked: bool,
+    /// Entrées déjà présentes chez Clover sous le même nom : gardées telles quelles.
+    kept: usize,
+}
+
+// ── Emplacements ────────────────────────────────────────────────────────────────
+
+/// Emplacements par défaut des launchers ; `data` est `%APPDATA%`, `~/Library/Application Support`
+/// ou `~/.local/share`.
+fn sources(home: &Path, data: &Path) -> Vec<Source> {
+    let mut found = Vec::new();
+    let official = if cfg!(windows) {
+        data.join(".minecraft")
+    } else if cfg!(target_os = "macos") {
+        data.join("minecraft")
+    } else {
+        home.join(".minecraft")
+    };
+    official_sources(&official, &mut found);
+    for app in ["ModrinthApp", "com.modrinth.theseus"] {
+        modrinth_sources(&data.join(app).join("profiles"), &mut found);
+    }
+    prism_sources("Prism Launcher", &data.join("PrismLauncher"), "prismlauncher.cfg", &mut found);
+    prism_sources(
+        "Prism Launcher",
+        &home.join(".var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher"),
+        "prismlauncher.cfg",
+        &mut found,
+    );
+    prism_sources("MultiMC", &data.join("multimc"), "multimc.cfg", &mut found);
+    for base in [home.join("curseforge"), home.join("Documents").join("curseforge")] {
+        curseforge_sources(&base.join("minecraft").join("Instances"), &mut found);
+    }
+    found
+}
+
+#[derive(Deserialize)]
+struct LauncherProfiles {
+    #[serde(default)]
+    profiles: HashMap<String, OfficialProfile>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficialProfile {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    last_version_id: String,
+    game_dir: Option<PathBuf>,
+    #[serde(default)]
+    last_used: String,
+}
+
+/// Launcher officiel : `.minecraft`, plus un dossier par installation qui en a choisi un autre.
+/// Seuls les profils de `launcher_profiles.json` sont gardés ; les comptes sont ailleurs.
+fn official_sources(root: &Path, found: &mut Vec<Source>) {
+    if !root.is_dir() {
+        return;
+    }
+    let mut profiles: Vec<OfficialProfile> = read_json::<LauncherProfiles>(&root.join("launcher_profiles.json"))
+        .map(|file| file.profiles.into_values().collect())
+        .unwrap_or_default();
+    // Le profil joué en dernier donne la version affichée (dates ISO 8601 : ordre lexical).
+    profiles.sort_by(|a, b| b.last_used.cmp(&a.last_used));
+    let default = profiles.iter().find(|profile| profile.game_dir.as_deref().is_none_or(|dir| dir == root));
+    let (minecraft, loader) = default.map(|profile| parse_version_id(&profile.last_version_id)).unwrap_or_default();
+    found.push(Source { launcher: "Launcher officiel", name: "Installation par défaut".into(), minecraft, loader, dir: root.to_path_buf() });
+    let mut seen = HashSet::from([root.to_path_buf()]);
+    for profile in &profiles {
+        let Some(dir) = profile.game_dir.as_ref().filter(|dir| dir.is_dir()) else { continue };
+        if !seen.insert(dir.clone()) {
+            continue;
+        }
+        let (minecraft, loader) = parse_version_id(&profile.last_version_id);
+        let name = if profile.name.is_empty() { profile.last_version_id.clone() } else { profile.name.clone() };
+        found.push(Source { launcher: "Launcher officiel", name, minecraft, loader, dir: dir.clone() });
+    }
+}
+
+/// `lastVersionId` du launcher officiel : « 1.21.4 », « fabric-loader-0.16.10-1.21.4 »,
+/// « 1.20.1-forge-47.2.0 », « neoforge-21.1.77 », « latest-release »…
+fn parse_version_id(id: &str) -> (Option<String>, Option<String>) {
+    for (prefix, loader) in [("fabric-loader-", "Fabric"), ("quilt-loader-", "Quilt")] {
+        if let Some(rest) = id.strip_prefix(prefix) {
+            return (rest.split_once('-').map(|(_, minecraft)| minecraft.to_owned()), Some(loader.into()));
+        }
+    }
+    if let Some((minecraft, _)) = id.split_once("-forge") {
+        return (Some(minecraft.into()), Some("Forge".into()));
+    }
+    if id.starts_with("neoforge-") {
+        return (None, Some("NeoForge".into()));
+    }
+    if id.is_empty() || id.starts_with("latest-") {
+        return (None, None);
+    }
+    (Some(id.into()), None)
+}
+
+/// Modrinth App : un dossier par profil. Version et loader sont dans `app.db`, qui garde aussi les
+/// comptes : il n'est pas ouvert, le journal du jeu suffit (`log_hint`).
+fn modrinth_sources(profiles: &Path, found: &mut Vec<Source>) {
+    for dir in subdirs(profiles) {
+        found.push(Source { launcher: "Modrinth App", name: file_name(&dir), minecraft: None, loader: None, dir });
+    }
+}
+
+#[derive(Deserialize)]
+struct PrismPack {
+    components: Vec<PrismComponent>,
+}
+
+#[derive(Deserialize)]
+struct PrismComponent {
+    uid: String,
+    version: Option<String>,
+}
+
+/// Prism Launcher et MultiMC : `instances/<id>/` (ou `InstanceDir` de leur configuration), avec
+/// `instance.cfg` (nom) et `mmc-pack.json` (composants) ; le jeu est dans `.minecraft/` ou
+/// `minecraft/`. Les comptes (`accounts.json`) ne sont pas lus.
+fn prism_sources(launcher: &'static str, root: &Path, config: &str, found: &mut Vec<Source>) {
+    let custom = fs::read_to_string(root.join(config)).ok().and_then(|text| ini_value(&text, "InstanceDir"));
+    // Un chemin absolu remplace `root` dans `join`.
+    let instances = custom.map_or_else(|| root.join("instances"), |dir| root.join(dir));
+    for dir in subdirs(&instances) {
+        let Ok(cfg) = fs::read_to_string(dir.join("instance.cfg")) else { continue };
+        let Some(game) = [".minecraft", "minecraft"].iter().map(|name| dir.join(name)).find(|path| path.is_dir()) else { continue };
+        let pack = read_json::<PrismPack>(&dir.join("mmc-pack.json")).map(|pack| pack.components).unwrap_or_default();
+        let minecraft = pack.iter().find(|c| c.uid == "net.minecraft").and_then(|c| c.version.clone());
+        let loader = pack.iter().find_map(|c| match c.uid.as_str() {
+            "net.fabricmc.fabric-loader" => Some("Fabric"),
+            "org.quiltmc.quilt-loader" => Some("Quilt"),
+            "net.minecraftforge" => Some("Forge"),
+            "net.neoforged" => Some("NeoForge"),
+            _ => None,
+        });
+        let name = ini_value(&cfg, "name").unwrap_or_else(|| file_name(&dir));
+        found.push(Source { launcher, name, minecraft, loader: loader.map(Into::into), dir: game });
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CurseForgeInstance {
+    name: Option<String>,
+    game_version: Option<String>,
+    base_mod_loader: Option<CurseForgeLoader>,
+}
+
+#[derive(Deserialize)]
+struct CurseForgeLoader {
+    /// « fabric-0.16.10-1.21.4 », « forge-47.2.0 », « neoforge-21.1.77 ».
+    name: String,
+}
+
+/// CurseForge : `Instances/<nom>/`, décrit par `minecraftinstance.json` ; le jeu est le dossier
+/// lui-même.
+fn curseforge_sources(instances: &Path, found: &mut Vec<Source>) {
+    for dir in subdirs(instances) {
+        let Some(meta) = read_json::<CurseForgeInstance>(&dir.join("minecraftinstance.json")) else { continue };
+        let loader = meta.base_mod_loader.and_then(|loader| match loader.name.split('-').next() {
+            Some("fabric") => Some("Fabric"),
+            Some("quilt") => Some("Quilt"),
+            Some("forge") => Some("Forge"),
+            Some("neoforge") => Some("NeoForge"),
+            _ => None,
+        });
+        let name = meta.name.unwrap_or_else(|| file_name(&dir));
+        found.push(Source { launcher: "CurseForge", name, minecraft: meta.game_version, loader: loader.map(Into::into), dir });
+    }
+}
+
+/// « Loading Minecraft 26.2 with Fabric Loader 0.19.5 » : en tête du journal sous Fabric et Quilt.
+fn log_hint(dir: &Path) -> Option<(String, Option<String>)> {
+    let mut head = Vec::new();
+    fs::File::open(dir.join("logs").join("latest.log")).ok()?.take(64 * 1024).read_to_end(&mut head).ok()?;
+    let head = String::from_utf8_lossy(&head);
+    let line = head.lines().find_map(|line| line.split_once("Loading Minecraft ").map(|(_, rest)| rest))?;
+    let (minecraft, loader) = match line.split_once(" with ") {
+        Some((minecraft, loader)) => (minecraft, loader.split_whitespace().next()),
+        None => (line, None),
+    };
+    let minecraft = minecraft.trim();
+    (!minecraft.is_empty()).then(|| (minecraft.to_owned(), loader.map(str::to_owned)))
+}
+
+fn ini_value(text: &str, key: &str) -> Option<String> {
+    text.lines()
+        .find_map(|line| line.trim().strip_prefix(key)?.strip_prefix('=').map(str::trim))
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
+    serde_json::from_slice(&fs::read(path).ok()?).ok()
+}
+
+fn file_name(path: &Path) -> String {
+    path.file_name().unwrap_or_default().to_string_lossy().into_owned()
+}
+
+/// Sous-dossiers réels (pas de lien), hors dossiers techniques (`.tmp`, `_MMC_TEMP`…), triés.
+fn subdirs(dir: &Path) -> Vec<PathBuf> {
+    let Ok(read) = fs::read_dir(dir) else { return Vec::new() };
+    let mut dirs: Vec<PathBuf> = read
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .filter(|entry| !entry.file_name().to_string_lossy().starts_with(['.', '_']))
+        .map(|entry| entry.path())
+        .collect();
+    dirs.sort();
+    dirs
+}
+
+// ── Contenu d'un dossier de jeu ─────────────────────────────────────────────────
+
+#[derive(Clone, Copy, PartialEq)]
+enum Folder {
+    ResourcePacks,
+    ShaderPacks,
+    Screenshots,
+    Worlds,
+}
+
+impl Folder {
+    fn name(self) -> &'static str {
+        match self {
+            Self::ResourcePacks => "resourcepacks",
+            Self::ShaderPacks => "shaderpacks",
+            Self::Screenshots => "screenshots",
+            Self::Worlds => "saves",
+        }
+    }
+
+    /// Entrées que le jeu reconnaît. Les `<pack>.txt` d'Iris (réglages d'un shader) ne comptent
+    /// pas : ils sont copiés avec leur pack.
+    fn entries(self, game: &Path) -> Vec<PathBuf> {
+        let Ok(read) = fs::read_dir(game.join(self.name())) else { return Vec::new() };
+        let mut entries: Vec<PathBuf> = read
+            .flatten()
+            .filter_map(|entry| {
+                let kind = entry.file_type().ok()?;
+                let path = entry.path();
+                let zip = path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("zip"));
+                let png = path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("png"));
+                let accepted = match self {
+                    Self::ResourcePacks | Self::ShaderPacks => kind.is_dir() || (kind.is_file() && zip),
+                    Self::Screenshots => kind.is_file() && png,
+                    Self::Worlds => kind.is_dir() && path.join("level.dat").is_file(),
+                };
+                accepted.then_some(path)
+            })
+            .collect();
+        entries.sort();
+        entries
+    }
+}
+
+fn content(game: &Path) -> Content {
+    let servers = fs::read(game.join("servers.dat")).ok().and_then(|bytes| servers::entries(&bytes).map(|list| list.iter().filter(|entry| !servers::hidden(entry)).count()));
+    Content {
+        options: game.join("options.txt").is_file(),
+        servers: servers.unwrap_or(0),
+        resource_packs: Folder::ResourcePacks.entries(game).len(),
+        shader_packs: Folder::ShaderPacks.entries(game).len(),
+        screenshots: Folder::Screenshots.entries(game).len(),
+        worlds: Folder::Worlds.entries(game).len(),
+    }
+}
+
+fn jars(game: &Path) -> Vec<PathBuf> {
+    jars_in(&game.join("mods"))
+}
+
+fn jars_in(dir: &Path) -> Vec<PathBuf> {
+    let Ok(read) = fs::read_dir(dir) else { return Vec::new() };
+    read.flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("jar")))
+        .collect()
+}
+
+#[derive(Clone)]
+struct ModFile {
+    name: String,
+    sha512: String,
+    /// Le `.jar` contient un `fabric.mod.json`.
+    fabric: bool,
+}
+
+struct Scan {
+    source: Source,
+    content: Content,
+    mods: Vec<ModFile>,
+}
+
+/// Avancement de la recherche (évènement `import-scan`), pour l'animation de l'écran d'import.
+#[derive(Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum ScanEvent<'a> {
+    /// Installation à reprendre trouvée ; ses `mods` vont être lus (empreintes).
+    Installation { launcher: &'a str, name: &'a str, mods: usize },
+    /// Empreintes envoyées à Modrinth pour reconnaître les mods.
+    Identify { mods: usize },
+}
+
+/// Installations qui ont quelque chose à reprendre, hors dossiers du Clover Launcher lui-même.
+/// `found` est appelé pour chacune, avant la lecture de ses mods (la partie lente). `known` : mods
+/// déjà lus, remplacé par ceux de cette recherche (les fichiers disparus en sortent).
+fn scan(home: &Path, data: &Path, clover: &Path, known: &mut HashMap<PathBuf, (Stamp, ModFile)>, found: &dyn Fn(&Source, usize)) -> Vec<Scan> {
+    let clover = fs::canonicalize(clover).unwrap_or_else(|_| clover.to_path_buf());
+    let mut seen = HashSet::new();
+    let mut read = HashMap::new();
+    let scans = sources(home, data)
+        .into_iter()
+        .filter(|source| {
+            let dir = fs::canonicalize(&source.dir).unwrap_or_else(|_| source.dir.clone());
+            !dir.starts_with(&clover) && seen.insert(dir)
+        })
+        .filter_map(|mut source| {
+            let content = content(&source.dir);
+            let jars = jars(&source.dir);
+            if content == Content::default() && jars.is_empty() {
+                return None;
+            }
+            found(&source, jars.len());
+            let mods: Vec<ModFile> = jars
+                .into_iter()
+                .filter_map(|jar| {
+                    let stamp = stamp(&jar)?;
+                    let file = match known.remove(&jar) {
+                        Some((before, file)) if before == stamp => file,
+                        _ => ModFile { name: file_name(&jar), sha512: game::personal::sha512(&jar).ok()?, fabric: game::personal::fabric_id(&jar).is_some() },
+                    };
+                    read.insert(jar, (stamp, file.clone()));
+                    Some(file)
+                })
+                .collect();
+            if source.minecraft.is_none() {
+                if let Some((minecraft, loader)) = log_hint(&source.dir) {
+                    source.minecraft = Some(minecraft);
+                    source.loader = source.loader.or(loader);
+                }
+            }
+            Some(Scan { source, content, mods })
+        })
+        .collect();
+    *known = read;
+    scans
+}
+
+/// Projet Modrinth d'un mod du catalogue, lu dans l'URL de son fichier
+/// (`cdn.modrinth.com/data/<projet>/versions/…`).
+fn catalogue_project(entry: &game::manifest::Mod) -> Option<&str> {
+    entry.file.as_ref()?.url.strip_prefix("https://cdn.modrinth.com/data/")?.split('/').next()
+}
+
+// ── Copie ───────────────────────────────────────────────────────────────────────
+
+#[derive(Clone, Copy, PartialEq)]
+enum Task {
+    Entry(Folder),
+    /// Réglages d'un mod (`config/<entrée>`).
+    Config,
+    /// Mod copié dans « Mes mods ».
+    Mod,
+}
+
+/// Copie dans `target` (dossier du jeu) et `personal` (« Mes mods ») ce qui est choisi ; `mods` :
+/// fichiers de `source/mods` à reprendre. Chaque entrée arrive complète ou pas du tout : un import
+/// interrompu se relance sans doublon, les entrées déjà présentes sont gardées.
+fn import(source: &Path, target: &Path, personal: &Path, mods: &[String], choices: &Choices, progress: &dyn Fn(f64)) -> io::Result<Imported> {
+    let mut imported = Imported::default();
+    fs::create_dir_all(target)?;
+    if choices.options && source.join("options.txt").is_file() {
+        let destination = target.join("options.txt");
+        if destination.is_file() {
+            fs::copy(&destination, backup(&destination))?;
+        }
+        copy_atomically(&source.join("options.txt"), &destination)?;
+        imported.copied.options = true;
+    }
+    if choices.servers {
+        imported.copied.servers = merge_servers(&source.join("servers.dat"), &target.join("servers.dat"))?;
+    }
+
+    let folders = [
+        (choices.resource_packs, Folder::ResourcePacks),
+        (choices.shader_packs, Folder::ShaderPacks),
+        (choices.screenshots, Folder::Screenshots),
+        (choices.worlds, Folder::Worlds),
+    ];
+    let mut tasks = Vec::new();
+    for (folder, entry) in folders.into_iter().filter(|(chosen, _)| *chosen).flat_map(|(_, folder)| folder.entries(source).into_iter().map(move |entry| (folder, entry))) {
+        let destination = target.join(folder.name()).join(entry.file_name().unwrap_or_default());
+        if destination.exists() {
+            imported.kept += 1;
+        } else {
+            tasks.push((Task::Entry(folder), entry, destination));
+        }
+    }
+    // Les réglages déjà présents chez Clover (un mod du catalogue déjà lancé) sont gardés.
+    if choices.options {
+        for entry in config_entries(source) {
+            let destination = target.join("config").join(entry.file_name().unwrap_or_default());
+            if !destination.exists() {
+                tasks.push((Task::Config, entry, destination));
+            }
+        }
+    }
+    if choices.personal_mods {
+        // Même mod sous un autre nom de fichier (autre version) : déjà dans « Mes mods ».
+        let mut present: HashSet<String> = jars_in(personal).iter().filter_map(|jar| game::personal::fabric_id(jar)).collect();
+        for name in mods {
+            let (entry, destination) = (source.join("mods").join(name), personal.join(name));
+            let fresh = game::personal::fabric_id(&entry).is_some_and(|id| present.insert(id));
+            if !fresh || destination.exists() {
+                imported.kept += 1;
+            } else {
+                tasks.push((Task::Mod, entry, destination));
+            }
+        }
+    }
+
+    let sized: Vec<_> = tasks
+        .into_iter()
+        .map(|(task, entry, destination)| {
+            let bytes = size(&entry);
+            (task, entry, destination, bytes)
+        })
+        .collect();
+    let total = sized.iter().map(|(.., bytes)| bytes).sum::<u64>().max(1);
+    let (mut done, mut reported) = (0, 0);
+    for (task, entry, destination, bytes) in sized {
+        fs::create_dir_all(destination.parent().unwrap_or(target))?;
+        copy_atomically(&entry, &destination)?;
+        if task == Task::Entry(Folder::ShaderPacks) {
+            let (settings, copy) = (with_suffix(&entry, ".txt"), with_suffix(&destination, ".txt"));
+            if settings.is_file() && !copy.exists() {
+                copy_atomically(&settings, &copy)?;
+            }
+        }
+        match task {
+            Task::Entry(Folder::ResourcePacks) => imported.copied.resource_packs += 1,
+            Task::Entry(Folder::ShaderPacks) => imported.copied.shader_packs += 1,
+            Task::Entry(Folder::Screenshots) => imported.copied.screenshots += 1,
+            Task::Entry(Folder::Worlds) => imported.copied.worlds += 1,
+            Task::Config => imported.copied.options = true,
+            Task::Mod => imported.mods += 1,
+        }
+        done += bytes;
+        let percent = done * 100 / total;
+        if percent != reported {
+            reported = percent;
+            progress(done as f64 / total as f64);
+        }
+    }
+    Ok(imported)
+}
+
+/// Entrées de `config/` (fichiers et dossiers, sans lien), hors fichiers cachés.
+fn config_entries(game: &Path) -> Vec<PathBuf> {
+    let Ok(read) = fs::read_dir(game.join("config")) else { return Vec::new() };
+    let mut entries: Vec<PathBuf> = read
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file() || kind.is_dir()))
+        .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
+        .map(|entry| entry.path())
+        .collect();
+    entries.sort();
+    entries
+}
+
+/// Ajoute à la liste Clover les serveurs qu'elle n'a pas encore (même adresse) et renvoie leur
+/// nombre. Une liste Clover illisible est gardée en `.bak` puis remplacée.
+fn merge_servers(source: &Path, target: &Path) -> io::Result<usize> {
+    let Ok(incoming) = fs::read(source) else { return Ok(0) };
+    let Some(incoming) = servers::entries(&incoming) else { return Ok(0) };
+    let existing = fs::read(target).unwrap_or_default();
+    let current = if existing.is_empty() {
+        Vec::new()
+    } else if let Some(current) = servers::entries(&existing) {
+        current
+    } else {
+        fs::copy(target, backup(target))?;
+        Vec::new()
+    };
+    let mut known: HashSet<String> = current.iter().filter_map(|entry| servers::address(entry)).collect();
+    // Les entrées masquées ne servent qu'au jeu (connexions directes) : elles ne sont pas reprises.
+    let added: Vec<&[u8]> = incoming
+        .into_iter()
+        .filter(|entry| !servers::hidden(entry))
+        .filter(|entry| servers::address(entry).is_none_or(|address| known.insert(address)))
+        .collect();
+    if added.is_empty() {
+        return Ok(0);
+    }
+    let merged: Vec<&[u8]> = current.into_iter().chain(added.iter().copied()).collect();
+    write_atomically(target, &servers::write(&merged))?;
+    Ok(added.len())
+}
+
+fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(suffix);
+    name.into()
+}
+
+fn backup(path: &Path) -> PathBuf {
+    with_suffix(path, ".bak")
+}
+
+/// Fichier ou dossier copié à côté sous un nom provisoire, puis renommé.
+fn copy_atomically(source: &Path, destination: &Path) -> io::Result<()> {
+    let temporary = destination.with_file_name(format!(".{}.clover-import", file_name(destination)));
+    let _ = fs::remove_dir_all(&temporary);
+    let _ = fs::remove_file(&temporary);
+    let result = if source.is_dir() { copy_tree(source, &temporary) } else { fs::copy(source, &temporary).map(drop) };
+    let result = result.and_then(|()| fs::rename(&temporary, destination));
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&temporary);
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let temporary = with_suffix(path, ".tmp");
+    fs::write(&temporary, bytes)?;
+    fs::rename(temporary, path)
+}
+
+/// Copie récursive sans suivre les liens. `session.lock` (verrou d'un monde ouvert, inutile
+/// ailleurs) est laissé de côté.
+fn copy_tree(source: &Path, destination: &Path) -> io::Result<()> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        let to = destination.join(entry.file_name());
+        if kind.is_dir() {
+            copy_tree(&entry.path(), &to)?;
+        } else if kind.is_file() && entry.file_name() != "session.lock" {
+            fs::copy(entry.path(), to)?;
+        }
+    }
+    Ok(())
+}
+
+fn size(path: &Path) -> u64 {
+    let Ok(metadata) = fs::symlink_metadata(path) else { return 0 };
+    if !metadata.is_dir() {
+        return metadata.len();
+    }
+    fs::read_dir(path).map(|read| read.flatten().map(|entry| size(&entry.path())).sum()).unwrap_or(0)
+}
+
+/// `servers.dat` : NBT non compressé, composé racine qui ne contient que la liste `servers`
+/// (`name`, `ip`, `icon`, `hidden`…). Juste de quoi compter, comparer et fusionner les entrées.
+mod servers {
+    const END: u8 = 0;
+    const BYTE: u8 = 1;
+    const STRING: u8 = 8;
+    const LIST: u8 = 9;
+    const COMPOUND: u8 = 10;
+    /// Profondeur d'imbrication acceptée, bien au-delà de celle d'une entrée de serveur.
+    const MAX_DEPTH: u8 = 32;
+
+    struct Reader<'a> {
+        bytes: &'a [u8],
+        pos: usize,
+    }
+
+    impl<'a> Reader<'a> {
+        fn take(&mut self, n: usize) -> Option<&'a [u8]> {
+            let slice = self.bytes.get(self.pos..self.pos.checked_add(n)?)?;
+            self.pos += n;
+            Some(slice)
+        }
+
+        fn byte(&mut self) -> Option<u8> {
+            Some(self.take(1)?[0])
+        }
+
+        fn length(&mut self) -> Option<usize> {
+            usize::try_from(i32::from_be_bytes(self.take(4)?.try_into().ok()?)).ok()
+        }
+
+        fn string(&mut self) -> Option<&'a [u8]> {
+            let n = u16::from_be_bytes(self.take(2)?.try_into().ok()?);
+            self.take(usize::from(n))
+        }
+
+        /// Passe la valeur d'une balise de type `kind`.
+        fn skip(&mut self, kind: u8, depth: u8) -> Option<()> {
+            if depth > MAX_DEPTH {
+                return None;
+            }
+            match kind {
+                1 => self.take(1).map(drop),
+                2 => self.take(2).map(drop),
+                3 | 5 => self.take(4).map(drop),
+                4 | 6 => self.take(8).map(drop),
+                7 => {
+                    let n = self.length()?;
+                    self.take(n).map(drop)
+                }
+                STRING => self.string().map(drop),
+                LIST => {
+                    let item = self.byte()?;
+                    for _ in 0..self.length()? {
+                        self.skip(item, depth + 1)?;
+                    }
+                    Some(())
+                }
+                COMPOUND => loop {
+                    let tag = self.byte()?;
+                    if tag == END {
+                        return Some(());
+                    }
+                    self.string()?;
+                    self.skip(tag, depth + 1)?;
+                },
+                11 => {
+                    let n = self.length()?;
+                    self.take(n.checked_mul(4)?).map(drop)
+                }
+                12 => {
+                    let n = self.length()?;
+                    self.take(n.checked_mul(8)?).map(drop)
+                }
+                _ => None,
+            }
+        }
+
+        /// Dans un composé, se place sur la valeur de la balise `name` de type `kind`.
+        fn find(mut self, kind: u8, name: &[u8]) -> Option<Self> {
+            loop {
+                let tag = self.byte()?;
+                if tag == END {
+                    return None;
+                }
+                let found = self.string()? == name;
+                if found && tag == kind {
+                    return Some(self);
+                }
+                self.skip(tag, 1)?;
+            }
+        }
+    }
+
+    /// Entrées de la liste (valeur brute du composé, balise de fin comprise) ; `None` si le
+    /// fichier n'est pas lisible.
+    pub fn entries(bytes: &[u8]) -> Option<Vec<&[u8]>> {
+        let mut reader = Reader { bytes, pos: 0 };
+        if reader.byte()? != COMPOUND {
+            return None;
+        }
+        reader.string()?;
+        let mut entries = Vec::new();
+        loop {
+            let tag = reader.byte()?;
+            if tag == END {
+                return Some(entries);
+            }
+            let name = reader.string()?;
+            if tag == LIST && name == b"servers" {
+                let item = reader.byte()?;
+                let n = reader.length()?;
+                if n > 0 && item != COMPOUND {
+                    return None;
+                }
+                for _ in 0..n {
+                    let start = reader.pos;
+                    reader.skip(COMPOUND, 1)?;
+                    entries.push(&bytes[start..reader.pos]);
+                }
+            } else {
+                reader.skip(tag, 1)?;
+            }
+        }
+    }
+
+    /// Adresse en minuscules, pour reconnaître un serveur déjà enregistré.
+    pub fn address(entry: &[u8]) -> Option<String> {
+        let ip = Reader { bytes: entry, pos: 0 }.find(STRING, b"ip")?.string()?;
+        Some(String::from_utf8_lossy(ip).trim().to_ascii_lowercase())
+    }
+
+    /// Entrée gardée par le jeu pour une connexion directe, absente du menu Multijoueur.
+    pub fn hidden(entry: &[u8]) -> bool {
+        Reader { bytes: entry, pos: 0 }.find(BYTE, b"hidden").and_then(|mut reader| reader.byte()).is_some_and(|value| value != 0)
+    }
+
+    pub fn write(entries: &[&[u8]]) -> Vec<u8> {
+        let mut out = vec![COMPOUND, 0, 0, LIST, 0, 7];
+        out.extend_from_slice(b"servers");
+        out.push(COMPOUND);
+        out.extend_from_slice(&i32::try_from(entries.len()).unwrap_or(i32::MAX).to_be_bytes());
+        for entry in entries {
+            out.extend_from_slice(entry);
+        }
+        out.push(END);
+        out
+    }
+}
+
+// ── Commandes ───────────────────────────────────────────────────────────────────
+
+fn path_error(error: tauri::Error) -> String {
+    format!("Dossier personnel introuvable : {error}")
+}
+
+/// Recherche les installations des autres launchers. Les mods sont identifiés sur Modrinth en une
+/// requête ; sans réseau ni catalogue, ils sont tous proposés pour « Mes mods ». Ce que la
+/// recherche précédente a déjà lu ou identifié n'est pas refait.
+#[tauri::command]
+pub async fn detect_installations(app: AppHandle, state: State<'_, AppState>, detected: State<'_, Detected>) -> Result<Vec<Installation>, String> {
+    let home = app.path().home_dir().map_err(path_error)?;
+    let data = app.path().data_dir().map_err(path_error)?;
+    let root = state.root.clone();
+    let handle = app.clone();
+    let (mut known, mut projects) = {
+        let mut cache = detected.0.lock().expect("import");
+        (std::mem::take(&mut cache.mods), std::mem::take(&mut cache.projects))
+    };
+    let (scans, known) = tauri::async_runtime::spawn_blocking(move || {
+        let scans = scan(&home, &data, &root, &mut known, &|source, mods| {
+            let _ = handle.emit("import-scan", ScanEvent::Installation { launcher: source.launcher, name: &source.name, mods });
+        });
+        (scans, known)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let manifest = game::catalogue(&app).await.ok();
+    let enabled: HashSet<String> = match (state.snapshot().settings.enabled_mods, &manifest) {
+        (Some(mods), _) => mods.into_iter().collect(),
+        (None, Some(manifest)) => manifest.default_mods(),
+        (None, None) => HashSet::new(),
+    };
+    let by_project: HashMap<&str, &game::manifest::Mod> =
+        manifest.iter().flat_map(|manifest| &manifest.mods).filter_map(|entry| Some((catalogue_project(entry)?, entry))).collect();
+    let unknown: Vec<String> =
+        scans.iter().flat_map(|scan| &scan.mods).map(|file| &file.sha512).filter(|hash| !projects.contains_key(*hash)).cloned().collect::<HashSet<_>>().into_iter().collect();
+    if !unknown.is_empty() && !by_project.is_empty() {
+        let _ = app.emit("import-scan", ScanEvent::Identify { mods: unknown.len() });
+        match game::modrinth::identify(&game::download::client(), unknown.clone()).await {
+            Ok(mut identified) => {
+                for hash in unknown {
+                    let project = identified.remove(&hash).map(|version| version.project_id);
+                    projects.insert(hash, project);
+                }
+            }
+            Err(e) => eprintln!("[import] Modrinth injoignable pour identifier les mods : {e}"),
+        }
+    }
+
+    let mut dirs = Vec::new();
+    let mut installations = Vec::new();
+    for Scan { source, content, mods } in scans {
+        let mut catalogue_mods: Vec<CatalogueMod> = Vec::new();
+        let (mut personal, mut other_mods) = (Vec::new(), Vec::new());
+        for file in &mods {
+            match projects.get(&file.sha512).and_then(Option::as_deref).and_then(|project| by_project.get(project)) {
+                // Dépendance cachée, mod indisponible ou déjà activé : rien à proposer.
+                Some(entry) if entry.hidden || !entry.available || enabled.contains(&entry.id) => {}
+                Some(entry) if catalogue_mods.iter().any(|known| known.id == entry.id) => {}
+                Some(entry) => catalogue_mods.push(CatalogueMod { id: entry.id.clone(), name: entry.name.clone() }),
+                None if file.fabric => personal.push(file.name.clone()),
+                None => other_mods.push(file.name.trim_end_matches(".jar").to_owned()),
+            }
+        }
+        personal.sort_by_key(|name| name.to_lowercase());
+        other_mods.sort_by_key(|name| name.to_lowercase());
+        let path = source.dir.to_string_lossy().into_owned();
+        let catalogue = catalogue_mods.iter().map(|entry| entry.id.clone()).collect();
+        installations.push(Installation {
+            id: path.clone(),
+            launcher: source.launcher,
+            name: source.name,
+            minecraft: source.minecraft,
+            loader: source.loader,
+            path,
+            content,
+            catalogue_mods,
+            personal_mods: personal.iter().map(|name| name.trim_end_matches(".jar").to_owned()).collect(),
+            other_mods,
+        });
+        dirs.push(Found { dir: source.dir, personal, catalogue });
+    }
+    *detected.0.lock().expect("import") = Cache { installations: dirs, mods: known, projects };
+    Ok(installations)
+}
+
+/// Copie les éléments choisis d'une installation détectée dans le dossier et « Mes mods » de
+/// l'instance Clover intégrée ; les mods copiés sont activés, comme un mod ajouté à la main, et
+/// leurs dépendances obligatoires manquantes sont téléchargées. Refusé tant qu'un jeu lancé par
+/// Clover est ouvert : il réécrirait ces fichiers en quittant. Avancement : évènement
+/// `import-progress` (0 à 1).
+#[tauri::command]
+pub async fn import_installation(id: String, choices: Choices, app: AppHandle, state: State<'_, AppState>, detected: State<'_, Detected>) -> Result<Imported, String> {
+    const GAME_OPEN: &str = "Ferme Minecraft avant d'importer : le jeu réécrirait ces fichiers en quittant.";
+    let found = detected
+        .0
+        .lock()
+        .expect("import")
+        .installations
+        .iter()
+        .find(|found| found.dir.to_string_lossy() == id)
+        .cloned()
+        .ok_or("Installation introuvable : relance la recherche.")?;
+    let gate = app.state::<crate::LaunchGate>();
+    let _guard = gate.0.try_lock().map_err(|_| GAME_OPEN)?;
+    if app.state::<game::console::Console>().running() || instances::managed_game_running(&state.root) {
+        return Err(GAME_OPEN.into());
+    }
+    let paths = instances::paths(game::Paths::new(&app).map_err(|e| e.to_string())?, &instances::Instance::builtin()).map_err(|e| e.to_string())?;
+    let handle = app.clone();
+    let (game_dir, personal, mods) = (paths.game.clone(), paths.personal_mods.clone(), found.personal.clone());
+    let copy_mods = choices.personal_mods;
+    let activate = choices.mods;
+    let mut imported = tauri::async_runtime::spawn_blocking(move || {
+        import(&found.dir, &game_dir, &personal, &mods, &choices, &|ratio| {
+            let _ = handle.emit("import-progress", ratio);
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("Copie interrompue : {e}"))?;
+
+    // Les dépendances restées dans l'autre launcher (souvent des mods du catalogue cachés, comme
+    // Fabric API) : la sélection Clover, avec les mods que l'interface va activer, les fournit déjà.
+    if copy_mods && !found.personal.is_empty() {
+        let manifest = game::catalogue(&app).await.map_err(|e| e.to_string())?;
+        let mut enabled: HashSet<String> = state.snapshot().settings.enabled_mods.map_or_else(|| manifest.default_mods(), |mods| mods.into_iter().collect());
+        if activate {
+            enabled.extend(found.catalogue.iter().cloned());
+        }
+        let provided: Vec<String> = manifest.mods_to_install(&enabled).into_iter().filter_map(|entry| entry.file.as_ref().map(|file| file.sha512.clone())).collect();
+        match game::personal::install_dependencies(&game::download::client(), &paths.personal_mods, &found.personal, &manifest.minecraft.version, &provided).await {
+            Ok(resolved) => {
+                imported.dependencies = resolved.added.len();
+                imported.missing_dependencies = resolved.missing.len();
+            }
+            Err(e) => {
+                eprintln!("[import] dépendances non vérifiées : {e}");
+                imported.dependencies_unchecked = true;
+            }
+        }
+    }
+    Ok(imported)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("clover-import-{name}-{}", rand::random::<u64>()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn write(path: &Path, bytes: impl AsRef<[u8]>) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+
+    /// Entrée de `servers.dat` : `name`, `ip`, et `hidden` si demandé.
+    fn server(name: &str, ip: &str, hidden: bool) -> Vec<u8> {
+        let mut out = Vec::new();
+        for (key, value) in [("name", name), ("ip", ip)] {
+            out.push(8);
+            out.extend_from_slice(&(key.len() as u16).to_be_bytes());
+            out.extend_from_slice(key.as_bytes());
+            out.extend_from_slice(&(value.len() as u16).to_be_bytes());
+            out.extend_from_slice(value.as_bytes());
+        }
+        if hidden {
+            out.extend_from_slice(&[1, 0, 6]);
+            out.extend_from_slice(b"hidden");
+            out.push(1);
+        }
+        out.push(0);
+        out
+    }
+
+    /// `.jar` Fabric minimal (`fabric.mod.json` avec son identifiant), ou d'un autre loader.
+    fn jar(fabric_id: Option<&str>) -> Vec<u8> {
+        use std::io::Write;
+        let mut writer = zip::ZipWriter::new(io::Cursor::new(Vec::new()));
+        let (name, body) = match fabric_id {
+            Some(id) => ("fabric.mod.json", format!(r#"{{"id":"{id}","version":"1.0.0"}}"#)),
+            None => ("META-INF/mods.toml", String::new()),
+        };
+        writer.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+        writer.write_all(body.as_bytes()).unwrap();
+        writer.finish().unwrap().into_inner()
+    }
+
+    fn servers_dat(entries: &[Vec<u8>]) -> Vec<u8> {
+        servers::write(&entries.iter().map(Vec::as_slice).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn version_ids_of_the_official_launcher() {
+        let pair = |a: Option<&str>, b: Option<&str>| (a.map(str::to_owned), b.map(str::to_owned));
+        assert_eq!(parse_version_id("1.21.4"), pair(Some("1.21.4"), None));
+        assert_eq!(parse_version_id("fabric-loader-0.16.10-1.21.4"), pair(Some("1.21.4"), Some("Fabric")));
+        assert_eq!(parse_version_id("quilt-loader-0.26.0-1.20.1"), pair(Some("1.20.1"), Some("Quilt")));
+        assert_eq!(parse_version_id("1.20.1-forge-47.2.0"), pair(Some("1.20.1"), Some("Forge")));
+        assert_eq!(parse_version_id("neoforge-21.1.77"), pair(None, Some("NeoForge")));
+        assert_eq!(parse_version_id("latest-release"), pair(None, None));
+    }
+
+    #[test]
+    fn servers_are_counted_merged_and_deduplicated() {
+        let source = temp("servers-source");
+        let target = temp("servers-target");
+        write(&source.join("servers.dat"), servers_dat(&[server("Hypixel", "mc.hypixel.net", false), server("Clover", "PLAY.clovergames.fr", false), server("", "1.2.3.4", true)]));
+        write(&target.join("servers.dat"), servers_dat(&[server("Clover Games", "play.clovergames.fr", false)]));
+        assert_eq!(content(&source).servers, 2);
+
+        assert_eq!(merge_servers(&source.join("servers.dat"), &target.join("servers.dat")).unwrap(), 1);
+        let merged = fs::read(target.join("servers.dat")).unwrap();
+        let entries = servers::entries(&merged).unwrap();
+        let addresses: Vec<_> = entries.iter().filter_map(|entry| servers::address(entry)).collect();
+        assert_eq!(addresses, ["play.clovergames.fr", "mc.hypixel.net"]);
+        // Relancé, l'import n'ajoute rien.
+        assert_eq!(merge_servers(&source.join("servers.dat"), &target.join("servers.dat")).unwrap(), 0);
+        assert!(servers::entries(b"\x0a\x00\x00\x09\x00").is_none());
+    }
+
+    #[test]
+    fn detects_each_launcher_without_reading_accounts() {
+        let home = temp("home");
+        let data = home.join("data");
+        let official = if cfg!(windows) { data.join(".minecraft") } else if cfg!(target_os = "macos") { data.join("minecraft") } else { home.join(".minecraft") };
+        let custom = home.join("pvp");
+        let profiles = serde_json::json!({ "profiles": {
+            "a": { "name": "", "lastVersionId": "latest-release", "lastUsed": "2026-01-01T00:00:00.000Z" },
+            "b": { "name": "PvP", "lastVersionId": "fabric-loader-0.16.10-1.21.4", "gameDir": custom, "lastUsed": "2026-02-01T00:00:00.000Z" },
+        }});
+        write(&official.join("launcher_profiles.json"), profiles.to_string());
+        write(&official.join("options.txt"), "version:4903\n");
+        write(&official.join("logs/latest.log"), "[19:44:37] [main/INFO]: Loading Minecraft 26.2 with Fabric Loader 0.19.5\n");
+        write(&custom.join("saves/Monde/level.dat"), "x");
+        write(&custom.join("shaderpacks/Complementary.zip"), "x");
+        write(&custom.join("shaderpacks/Complementary.zip.txt"), "x");
+
+        write(&data.join("ModrinthApp/profiles/Fabulously Optimized/mods/sodium.jar"), jar(Some("sodium")));
+        write(&data.join("ModrinthApp/profiles/Fabulously Optimized/mods/create.jar"), jar(None));
+        write(&data.join("ModrinthApp/profiles/Empty/logs/latest.log"), "");
+
+        let prism = data.join("PrismLauncher/instances/skyblock");
+        write(&prism.join("instance.cfg"), "[General]\nname=Skyblock\n");
+        write(&prism.join("mmc-pack.json"), r#"{"components":[{"uid":"net.minecraft","version":"1.20.1"},{"uid":"net.fabricmc.fabric-loader","version":"0.15.0"}]}"#);
+        write(&prism.join(".minecraft/screenshots/a.png"), "x");
+        write(&prism.join(".minecraft/screenshots/notes.txt"), "x");
+        write(&data.join("PrismLauncher/instances/_MMC_TEMP/instance.cfg"), "name=temp");
+
+        let curse = home.join("curseforge/minecraft/Instances/All the Mods");
+        write(&curse.join("minecraftinstance.json"), r#"{"name":"All the Mods","gameVersion":"1.21.1","baseModLoader":{"name":"neoforge-21.1.77"}}"#);
+        write(&curse.join("resourcepacks/Faithful.zip"), "x");
+
+        let clover = home.join(".cloverlauncher");
+        let announced = Mutex::new(Vec::new());
+        let mut known = HashMap::new();
+        let found = scan(&home, &data, &clover, &mut known, &|source, mods| announced.lock().unwrap().push((source.name.clone(), mods)));
+        // Annoncées avant la lecture des mods ; « Empty » (journal seul) ne l'est pas.
+        let announced = announced.into_inner().unwrap();
+        assert_eq!(announced.len(), found.len());
+        assert!(announced.contains(&("Fabulously Optimized".into(), 2)));
+        let summary: Vec<_> = found.iter().map(|scan| (scan.source.launcher, scan.source.name.as_str(), scan.source.minecraft.as_deref(), scan.source.loader.as_deref())).collect();
+        assert_eq!(
+            summary,
+            [
+                ("Launcher officiel", "Installation par défaut", Some("26.2"), Some("Fabric")),
+                ("Launcher officiel", "PvP", Some("1.21.4"), Some("Fabric")),
+                ("Modrinth App", "Fabulously Optimized", None, None),
+                ("Prism Launcher", "Skyblock", Some("1.20.1"), Some("Fabric")),
+                ("CurseForge", "All the Mods", Some("1.21.1"), Some("NeoForge")),
+            ]
+        );
+        assert_eq!(found[1].content, Content { worlds: 1, shader_packs: 1, ..Content::default() });
+        let fabric: Vec<_> = found[2].mods.iter().map(|file| (file.name.as_str(), file.fabric)).collect();
+        assert_eq!(fabric.len(), 2);
+        assert!(fabric.contains(&("sodium.jar", true)) && fabric.contains(&("create.jar", false)));
+        assert_eq!(found[3].content.screenshots, 1);
+
+        // Nouvelle recherche : un mod inchangé n'est pas relu (empreinte gardée), un ajout l'est et
+        // un fichier retiré sort du cache.
+        let modrinth = data.join("ModrinthApp/profiles/Fabulously Optimized/mods");
+        let sodium = modrinth.join("sodium.jar");
+        let entry = known.get_mut(&sodium).unwrap();
+        entry.1.sha512 = "gardée".into();
+        write(&modrinth.join("lithium.jar"), jar(Some("lithium")));
+        fs::remove_file(modrinth.join("create.jar")).unwrap();
+        let again = scan(&home, &data, &clover, &mut known, &|_, _| {});
+        let hashes: HashMap<_, _> = again[2].mods.iter().map(|file| (file.name.as_str(), file.sha512.as_str())).collect();
+        assert_eq!(hashes["sodium.jar"], "gardée");
+        assert_eq!(hashes["lithium.jar"].len(), 128);
+        assert_eq!(known.len(), 2);
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn import_copies_whole_entries_and_keeps_existing_ones() {
+        let source = temp("import-source");
+        let target = temp("import-target");
+        write(&source.join("options.txt"), "fov:0.5\n");
+        write(&source.join("saves/Monde/level.dat"), "nouveau");
+        write(&source.join("saves/Monde/session.lock"), "verrou");
+        write(&source.join("saves/Monde/region/r.0.0.mca"), "région");
+        write(&source.join("saves/Ancien/level.dat"), "importé");
+        write(&source.join("shaderpacks/Complementary.zip"), "shader");
+        write(&source.join("shaderpacks/Complementary.zip.txt"), "réglages");
+        write(&source.join("screenshots/a.png"), "capture");
+        write(&source.join("config/zoomify.json"), "{\"zoom\":4}");
+        write(&source.join("config/sodium-options.json"), "importé");
+        write(&source.join("config/xaero/minimap.txt"), "carte");
+        write(&source.join("mods/zoomify.jar"), jar(Some("zoomify")));
+        write(&source.join("mods/xaero-1.2.jar"), jar(Some("xaerominimap")));
+        write(&source.join("mods/appleskin.jar"), jar(Some("appleskin")));
+        write(&target.join("options.txt"), "fov:0.0\n");
+        write(&target.join("saves/Ancien/level.dat"), "Clover");
+        write(&target.join("config/sodium-options.json"), "Clover");
+        let personal = target.join("personal-mods");
+        write(&personal.join("xaero-1.0.jar"), jar(Some("xaerominimap")));
+        write(&personal.join("appleskin.jar"), jar(Some("appleskin")));
+
+        let choices = Choices { options: true, mods: true, personal_mods: true, servers: true, resource_packs: true, shader_packs: true, screenshots: false, worlds: true };
+        let mods = ["zoomify.jar", "xaero-1.2.jar", "appleskin.jar"].map(str::to_owned);
+        let ratios = Mutex::new(Vec::new());
+        let imported = import(&source, &target, &personal, &mods, &choices, &|ratio| ratios.lock().unwrap().push(ratio)).unwrap();
+
+        assert_eq!(imported.copied, Content { options: true, worlds: 1, shader_packs: 1, ..Content::default() });
+        // Monde « Ancien », Xaero (autre version déjà là) et AppleSkin (même fichier).
+        assert_eq!(imported.kept, 3);
+        assert_eq!(imported.mods, 1);
+        assert!(personal.join("zoomify.jar").is_file() && !personal.join("xaero-1.2.jar").exists());
+        assert_eq!(fs::read_to_string(target.join("config/zoomify.json")).unwrap(), "{\"zoom\":4}");
+        assert_eq!(fs::read_to_string(target.join("config/xaero/minimap.txt")).unwrap(), "carte");
+        assert_eq!(fs::read_to_string(target.join("config/sodium-options.json")).unwrap(), "Clover");
+        assert_eq!(fs::read_to_string(target.join("options.txt")).unwrap(), "fov:0.5\n");
+        assert_eq!(fs::read_to_string(target.join("options.txt.bak")).unwrap(), "fov:0.0\n");
+        assert_eq!(fs::read_to_string(target.join("saves/Ancien/level.dat")).unwrap(), "Clover");
+        assert_eq!(fs::read_to_string(target.join("saves/Monde/region/r.0.0.mca")).unwrap(), "région");
+        assert!(!target.join("saves/Monde/session.lock").exists());
+        assert_eq!(fs::read_to_string(target.join("shaderpacks/Complementary.zip.txt")).unwrap(), "réglages");
+        assert!(!target.join("screenshots").exists());
+        assert!(fs::read_dir(target.join("saves")).unwrap().flatten().all(|entry| !entry.file_name().to_string_lossy().starts_with('.')));
+        assert_eq!(ratios.lock().unwrap().last().copied(), Some(1.0));
+        // Les fichiers de l'autre launcher sont intacts.
+        assert_eq!(fs::read_to_string(source.join("saves/Monde/session.lock")).unwrap(), "verrou");
+        fs::remove_dir_all(source).unwrap();
+        fs::remove_dir_all(target).unwrap();
+    }
+}

@@ -5,25 +5,27 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { NotificationBell } from "@/components/NotificationBell";
-import { SideNav } from "@/components/SideNav";
+import { SideNav, TAB_LABELS } from "@/components/SideNav";
 import { AccountMenu } from "@/components/AccountMenu";
 import { TitleBar } from "@/components/TitleBar";
 import { type UpdateState, UpdateToast } from "@/components/UpdateToast";
 import { VoteTicker } from "@/components/VoteTicker";
 import { api, type Catalogue, type ServerStatus, type SiteFeed, type SkinEntry, type Stored, type StorageUsage, type SystemInfo } from "@/lib/api";
 import { formatLog } from "@/lib/log";
+import { networkPlayers } from "@/lib/site";
 import { ConsoleScreen } from "@/screens/ConsoleScreen";
 import { CrashDialog } from "@/screens/Dialogs";
+import { Breadcrumb } from "@/components/Breadcrumb";
 import { HomeScreen } from "@/screens/HomeScreen";
+import { InstancePanel, type InstanceDraft, newInstance } from "@/screens/InstancePanel";
+import { InstancesScreen } from "@/screens/InstancesScreen";
+import { ModrinthDialog } from "@/screens/ModrinthDialog";
 import { ModsScreen, type ModsView } from "@/screens/ModsScreen";
-import { OnboardingAccounts, OnboardingDone, type LoginState } from "@/screens/OnboardingScreen";
-import { type Account, type Settings, SettingsScreen, type SettingsTab, type HiddenSetting } from "@/screens/SettingsScreen";
+import { DEFAULT_IMPORT, OnboardingAccounts, OnboardingDone, OnboardingImport, type LoginState } from "@/screens/OnboardingScreen";
+import { type Account, type Settings, SettingsScreen, type SettingsTab, type HiddenSetting, settingsTabLabel } from "@/screens/SettingsScreen";
 import { SkinEditorDialog } from "@/screens/SkinEditorDialog";
 import { SkinsScreen } from "@/screens/SkinsScreen";
-import type { Cape, ConsoleSnapshot, GameVersion, ModInfo, PersonalMod, PlayState, Profile, Progress, SavedSkin, SkinLook, Tab } from "@/types";
-
-/** Étapes du premier lancement tant que l'import depuis les autres launchers n'existe pas (CLO-281). */
-const STEPS = ["Comptes", "Terminé"] as const;
+import type { Cape, ConsoleSnapshot, DetectedInstance, ImportItem, ImportResult, ImportScan, InstanceEntry, InstanceInput, ModInfo, ModrinthKind, PersonalMod, PlayState, Profile, Progress, SavedSkin, SkinLook, Tab } from "@/types";
 
 /** Fonctions dont la ligne de réglage reste masquée tant qu'elles ne sont pas branchées. */
 const UPCOMING: HiddenSetting[] = ["desktopNotifications", "recommended", "steam", "changeGameDir"];
@@ -53,7 +55,25 @@ const CRASH_LOG_ENTRIES = 40;
 
 const SITE_URL = "https://clovergames.fr";
 
-type Phase = "loading" | "onboarding-accounts" | "onboarding-done" | "signin" | "app";
+/** `import` : import depuis les autres launchers ouvert depuis les paramètres. */
+type Phase = "loading" | "onboarding-accounts" | "onboarding-import" | "onboarding-done" | "signin" | "import" | "app";
+
+/** « Modrinth App · Fabulously Optimized : réglages, 2 serveurs, 3 mods activés, 40 mods copiés ». */
+function importSummary(instance: DetectedInstance, result: ImportResult, mods: number): string {
+  const count = (n: number, one: string, many: string) => (n > 0 ? [`${n} ${n > 1 ? many : one}`] : []);
+  const parts = [
+    ...(result.options ? ["réglages"] : []),
+    ...count(result.servers, "serveur", "serveurs"),
+    ...count(result.resourcePacks, "pack de ressources", "packs de ressources"),
+    ...count(result.shaderPacks, "shader", "shaders"),
+    ...count(result.screenshots, "capture", "captures"),
+    ...count(result.worlds, "monde", "mondes"),
+    ...count(mods, "mod activé", "mods activés"),
+    ...count(result.mods, "mod copié", "mods copiés"),
+    ...count(result.dependencies, "dépendance ajoutée", "dépendances ajoutées"),
+  ];
+  return `${instance.launcher} · ${instance.name} : ${parts.length > 0 ? parts.join(", ") : "déjà à jour"}`;
+}
 
 /** `undefined` tant que le site n'a rien dit de ce mode, `null` s'il est hors ligne. */
 function modePlayers(feed: SiteFeed, id: string): number | null | undefined {
@@ -78,10 +98,31 @@ export default function App() {
   const [stored, setStored] = useState<Stored | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [login, setLogin] = useState<LoginState>({ kind: "idle" });
+  // ── Import depuis les autres launchers ──
+  const [detected, setDetected] = useState<DetectedInstance[] | null>(null);
+  const [importScan, setImportScan] = useState<ImportScan>({ found: [], identifying: null });
+  const [importSelected, setImportSelected] = useState<string | null>(null);
+  const [importChoices, setImportChoices] = useState<Record<ImportItem, boolean>>(DEFAULT_IMPORT);
+  const [importing, setImporting] = useState<{ id: string; ratio: number } | null>(null);
+  /** Installations importées et une ligne de récapitulatif pour chacune. */
+  const [imports, setImports] = useState<{ id: string; summary: string }[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
 
   const [tab, setTab] = useState<Tab>("home");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  /** Écran quitté par un raccourci : le fil d'Ariane y ramène. */
+  const [from, setFrom] = useState<Tab | null>(null);
+  /** Navigation principale (barre latérale, roue dentée) : pas de fil d'Ariane. */
+  const navigate = useCallback((next: Tab) => {
+    setFrom(null);
+    if (next !== "instances") setInstanceDraft(null);
+    setTab(next);
+  }, []);
+  const jump = (next: Tab, section?: SettingsTab) => {
+    if (section) setSettingsTab(section);
+    setFrom(next === tab ? from : tab);
+    setTab(next);
+  };
   const [modsView, setModsView] = useState<ModsView>("catalogue");
 
   const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
@@ -91,6 +132,12 @@ export default function App() {
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [storage, setStorage] = useState<StorageUsage | null>(null);
   const [personalMods, setPersonalMods] = useState<PersonalMod[]>([]);
+  const personalGeneration = useRef(0);
+  const [instances, setInstances] = useState<InstanceEntry[]>([]);
+  const selectedInstance = stored?.selectedInstance ?? "clover";
+  const activeInstance = instances.find((entry) => entry.id === selectedInstance);
+  const [lastLaunched, setLastLaunched] = useState("clover");
+  const [instanceDraft, setInstanceDraft] = useState<InstanceDraft | null>(null);
 
   const [play, setPlay] = useState<PlayState>({ kind: "ready" });
   const [crash, setCrash] = useState<{ code: number | null; log: string } | null>(null);
@@ -110,6 +157,22 @@ export default function App() {
   const saveTimer = useRef<number | undefined>(undefined);
 
   const refreshStored = useCallback(async () => setStored(await api.getStored()), []);
+  const refreshInstances = useCallback(async () => {
+    const [entries, current] = await Promise.all([api.listInstances(), api.getStored()]);
+    setInstances(entries); setStored(current);
+  }, []);
+  const selectInstance = useCallback(async (id: string) => {
+    await api.selectInstance(id);
+    // Vidée seulement si l'instance change : l'effet qui recharge la liste suit `selectedInstance`
+    // et ne repasserait pas pour la même instance.
+    if (id !== selectedInstance) {
+      personalGeneration.current += 1;
+      setPersonalMods([]);
+    }
+    await refreshStored();
+  }, [refreshStored, selectedInstance]);
+
+  useEffect(() => { if (phase === "app") refreshInstances().catch((reason) => setNotice(String(reason))); }, [phase, refreshInstances]);
 
   // ── Démarrage : réglages, session du compte actif, puis l'écran qui convient ──
   useEffect(() => {
@@ -123,6 +186,7 @@ export default function App() {
       }
       const current = await api.getStored();
       setStored(current);
+      setLastLaunched(current.lastLaunchedInstance ?? "clover");
       setProfile(restored);
       if (!current.onboarded) setPhase("onboarding-accounts");
       else if (restored) setPhase("app");
@@ -281,11 +345,15 @@ export default function App() {
     if (tab === "settings" && settingsTab === "storage") api.storageUsage().then(setStorage).catch(() => {});
   }, [tab, settingsTab]);
 
-  const refreshPersonalMods = useCallback(() => api.personalMods().then(setPersonalMods).catch((reason) => setNotice(String(reason))), []);
+  const refreshPersonalMods = useCallback(() => {
+    const request = ++personalGeneration.current;
+    return api.personalMods().then((mods) => { if (request === personalGeneration.current) setPersonalMods(mods); })
+      .catch((reason) => { if (request === personalGeneration.current) setNotice(String(reason)); });
+  }, []);
 
   useEffect(() => {
-    if (tab === "mods") refreshPersonalMods();
-  }, [tab, refreshPersonalMods]);
+    if ((tab === "mods" || tab === "instances") && activeInstance?.kind !== "vanilla") refreshPersonalMods();
+  }, [tab, selectedInstance, activeInstance?.kind, refreshPersonalMods]);
 
   /** Réglage modifié : appliqué tout de suite, enregistré peu après (le curseur de mémoire bouge vite). */
   const updateSettings = useCallback((patch: Partial<Settings>) => {
@@ -338,18 +406,43 @@ export default function App() {
   }));
 
   // ── Jeu ──
-  const startGame = async (start: () => Promise<void>) => {
+  const startGame = useCallback(async (start: () => Promise<void>) => {
     setPlay({ kind: "installing" });
     try {
       await start();
       setPlay({ kind: "running" });
     } catch (reason) {
       setPlay({ kind: "ready", error: String(reason) });
+      setNotice(String(reason));
     }
-  };
+  }, []);
+
+  const trayAvailable = phase === "app" && Boolean(profile && stored);
+  useEffect(() => {
+    let cancelled = false;
+    const unlisten = listen<"play" | "instances" | "settings">("tray-action", ({ payload }) => {
+      if (!trayAvailable) return;
+      if (payload === "play") {
+        if (play.kind !== "ready") return;
+        navigate("home");
+        setLastLaunched(selectedInstance);
+        void startGame(() => api.playInstance(selectedInstance));
+      } else if (payload === "instances" || payload === "settings") {
+        navigate(payload);
+      }
+    });
+    // Enable the native shortcuts only after their listener is ready.
+    void unlisten.then(() => {
+      if (!cancelled) return api.setTrayState(trayAvailable, play.kind === "ready");
+    }).catch((reason) => console.error("[tray]", reason));
+    return () => {
+      cancelled = true;
+      void unlisten.then((stop) => stop());
+    };
+  }, [trayAvailable, play.kind, selectedInstance, navigate, startGame]);
 
   const defaultMods = useMemo(() => (catalogue?.mods ?? []).filter((mod) => mod.default && !mod.hidden && mod.available).map((mod) => mod.id), [catalogue]);
-  const enabledIds = settings?.enabledMods ?? defaultMods;
+  const enabledIds = (selectedInstance === "clover" ? settings?.enabledMods : activeInstance?.enabledMods) ?? defaultMods;
   const modInfos: ModInfo[] = (catalogue?.mods ?? [])
     .filter((mod) => !mod.hidden && mod.category)
     .map((mod) => ({
@@ -365,7 +458,73 @@ export default function App() {
 
   const toggleMod = (id: string, enabled: boolean) => {
     const next = enabled ? [...new Set([...enabledIds, id])] : enabledIds.filter((other) => other !== id);
-    updateSettings({ enabledMods: next });
+    if (selectedInstance === "clover") updateSettings({ enabledMods: next });
+    else {
+      setInstances((entries) => entries.map((entry) => entry.id === selectedInstance ? { ...entry, enabledMods: next } : entry));
+      api.setInstanceCatalogue(next).then(refreshInstances).catch((reason) => setNotice(String(reason)));
+    }
+  };
+
+  // ── Import depuis les autres launchers : nouvelle recherche à chaque ouverture ──
+  /**
+   * La première ouverture anime la recherche. Les suivantes affichent tout de suite le dernier
+   * résultat et le remplacent quand la nouvelle recherche répond : le cœur Rust ne relit que les mods
+   * ajoutés ou modifiés depuis, la mise à jour est presque immédiate.
+   */
+  const detection = useRef(0);
+  const openImport = (next: "onboarding-import" | "import") => {
+    const request = ++detection.current;
+    setPhase(next);
+    setImportScan({ found: [], identifying: null });
+    api
+      .detectInstallations()
+      .then((found) => {
+        if (request !== detection.current) return;
+        setDetected(found);
+        setImportSelected((current) => (found.some((entry) => entry.id === current) ? current : (found[0]?.id ?? null)));
+      })
+      .catch((reason) => {
+        if (request !== detection.current) return;
+        setDetected((current) => current ?? []);
+        setNotice(String(reason));
+      });
+  };
+
+  useEffect(() => {
+    type ScanEvent = { kind: "installation"; launcher: string; name: string; mods: number } | { kind: "identify"; mods: number };
+    const unlisten = [
+      listen<number>("import-progress", ({ payload }) => setImporting((current) => current && { ...current, ratio: payload })),
+      listen<ScanEvent>("import-scan", ({ payload }) =>
+        setImportScan((scan) =>
+          payload.kind === "identify"
+            ? { ...scan, identifying: payload.mods }
+            : { ...scan, found: [...scan.found, { launcher: payload.launcher, name: payload.name, mods: payload.mods }] },
+        ),
+      ),
+    ];
+    return () => unlisten.forEach((promise) => void promise.then((stop) => stop()));
+  }, []);
+
+  const runImport = async () => {
+    const instance = detected?.find((entry) => entry.id === importSelected);
+    if (!instance || importing) return;
+    setImporting({ id: instance.id, ratio: 0 });
+    try {
+      const result = await api.importInstallation(instance.id, importChoices);
+      // Les mods ne sont pas copiés : leurs équivalents du catalogue sont activés pour Clover Games.
+      const current = settings?.enabledMods ?? defaultMods;
+      const added = importChoices.mods ? instance.catalogueMods.map((mod) => mod.id).filter((id) => !current.includes(id)) : [];
+      if (added.length > 0) updateSettings({ enabledMods: [...current, ...added] });
+      const summary = importSummary(instance, result, added.length);
+      if (result.dependenciesUnchecked) setNotice("Modrinth ne répond pas : les dépendances des mods copiés n'ont pas été vérifiées. Relance l'import plus tard.");
+      else if (result.missingDependencies > 0)
+        setNotice(`${result.missingDependencies} dépendance${result.missingDependencies > 1 ? "s" : ""} de tes mods n'existe${result.missingDependencies > 1 ? "nt" : ""} pas pour cette version de Minecraft : désactive les mods signalés si le jeu plante.`);
+      setImports((done) => [...done.filter((entry) => entry.id !== instance.id), { id: instance.id, summary }]);
+    } catch (reason) {
+      setNotice(String(reason));
+    } finally {
+      setImporting(null);
+    }
   };
 
   // ── Mes mods ──
@@ -377,27 +536,96 @@ export default function App() {
   /** Ajoute les fichiers un par un : un .jar refusé n'empêche pas les autres d'être ajoutés. */
   const addPersonalMods = async (files: File[]) => {
     const errors: string[] = [];
-    for (const file of files) await api.addPersonalMod(file).catch((reason) => errors.push(String(reason)));
+    const added: string[] = [];
+    for (const file of files) await api.addPersonalMod(file).then(() => added.push(file.name), (reason) => errors.push(String(reason)));
+    // Un mod qui exige Fabric API, Cloth Config… planterait sans elles : elles viennent de Modrinth.
+    if (added.length > 0) {
+      await api
+        .installPersonalDependencies(added)
+        .then(({ missing }) => {
+          if (missing.length > 0) errors.push(`Dépendances introuvables pour cette version de Minecraft : ${missing.join(", ")}. Le jeu risque de planter avec ces mods.`);
+        })
+        .catch((reason) => errors.push(`Dépendances non vérifiées : ${reason}`));
+    }
     if (errors.length > 0) setNotice(errors.join(" "));
     await refreshPersonalMods();
   };
 
+  /** Mods de l'instance choisie : écran Mods, ou onglet de la page de l'instance. */
+  const modsScreen = (embedded: boolean) => (
+    <ModsScreen
+      embedded={embedded}
+      key={selectedInstance}
+      view={activeInstance?.kind === "fabric" ? "personal" : modsView}
+      onView={setModsView}
+      mods={activeInstance?.kind === "fabric" ? [] : modInfos}
+      catalogueVisible={activeInstance?.kind !== "fabric"}
+      instanceName={activeInstance?.name}
+      minecraftVersion={activeInstance?.minecraft ?? catalogue?.minecraft.version ?? ""}
+      onToggle={toggleMod}
+      personal={personalMods}
+      onTogglePersonal={togglePersonalMod}
+      onUpdatePersonal={(id) => changePersonalMod(api.updatePersonalMod(id))}
+      onRemovePersonal={(id) => changePersonalMod(api.removePersonalMod(id))}
+      onAddFiles={(files) => void addPersonalMods(files)}
+      modrinth={{ project: api.modrinthProject }}
+      onSearch={() => setSearchKind("mod")}
+      onOpenLink={open}
+    />
+  );
+
+  /** Recherche Modrinth ouverte, sur ce type de contenu. */
+  const [searchKind, setSearchKind] = useState<ModrinthKind | null>(null);
+  /** Fichiers posés pendant la création d'une instance depuis un modpack. */
+  const [modpackProgress, setModpackProgress] = useState<[number, number] | null>(null);
+  /** Change après chaque installation : la page de l'instance relit son dossier. */
+  const [contentRevision, setContentRevision] = useState(0);
+  useEffect(() => {
+    const unlisten = listen<[number, number]>("modpack-progress", ({ payload }) => setModpackProgress(payload));
+    return () => void unlisten.then((stop) => stop());
+  }, []);
+  const worlds = useCallback(() => api.instanceContent(selectedInstance, "saves").then((list) => list.map((world) => world.name)), [selectedInstance]);
+  // Vanilla ne charge ni mods ni Iris.
+  const searchKinds: ModrinthKind[] = activeInstance?.kind === "vanilla" ? ["resourcepack", "datapack", "modpack"] : ["mod", "resourcepack", "shader", "datapack", "modpack"];
+  const installFromModrinth = async (kind: ModrinthKind, project: string, world?: string) => {
+    if (kind === "mod") {
+      await api.installModrinthMod(project);
+      await refreshPersonalMods();
+    } else if (kind === "modpack") {
+      setModpackProgress(null);
+      try {
+        await api.installModpack(project);
+      } finally {
+        setModpackProgress(null);
+      }
+      await refreshInstances();
+    } else {
+      await api.installModrinthContent(kind, project, world);
+      // Les shaders passent par Iris : activé dans le catalogue Clover, installé d'office ailleurs.
+      if (kind === "shader" && selectedInstance === "clover" && !enabledIds.includes("iris")) toggleMod("iris", true);
+      if (kind === "shader" && activeInstance?.kind === "fabric") await refreshPersonalMods();
+    }
+    setContentRevision((value) => value + 1);
+  };
+
+  /** L'instance Clover intégrée suit le manifeste : seuls les réglages du launcher la concernent. */
+  const editInstance = (entry: InstanceEntry) => {
+    if (entry.id === "clover") {
+      jump("settings", "game");
+      return;
+    }
+    const { name, kind, minecraft, loader, separate, memoryMb } = entry;
+    setInstanceDraft({ id: entry.id, input: { name, kind, minecraft, loader, separate, memoryMb } });
+  };
+
+  const saveInstance = async (id: string | null, input: InstanceInput) => {
+    await selectInstance(await api.saveInstance(id, input));
+    await refreshInstances();
+    setInstanceDraft(null);
+  };
+
   const changePersonalMod = (action: Promise<void>) =>
     action.then(refreshPersonalMods).catch((reason) => setNotice(String(reason)));
-
-  const versions: GameVersion[] = catalogue
-    ? [
-        {
-          id: catalogue.minecraft.version,
-          loader: `Fabric ${catalogue.fabric.loader}`,
-          server: true,
-          joinable: true,
-          installed: Boolean(system?.java),
-          sizeMb: null,
-          mods: modInfos.filter((mod) => mod.available).length,
-        },
-      ]
-    : [{ id: "…", loader: "Fabric", server: true, joinable: true, installed: false, sizeMb: null, mods: 0 }];
 
   // Serveurs Clover Games exclus : l'adresse du serveur, celles des modes et leurs sous-domaines.
   const cloverHosts = catalogue ? [catalogue.server.host, ...catalogue.modes.flatMap((mode) => mode.host ?? [])] : [];
@@ -504,23 +732,46 @@ export default function App() {
     return <div className="h-full bg-background" />;
   }
 
+  const noticeToast = notice && (
+    <div role="alert" className="mc-frame flex max-w-[420px] items-start gap-3 bg-card px-4 py-3 text-[13px] shadow-[0_12px_32px_rgb(0_0_0/0.5)]">
+      <p className="flex-1 leading-snug">{notice}</p>
+      <button type="button" onClick={() => setNotice(null)} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
+        Fermer
+      </button>
+    </div>
+  );
+
   if (phase !== "app") {
-    const onboarding = phase === "onboarding-accounts" || phase === "onboarding-done";
+    const onboarding = phase === "onboarding-accounts" || phase === "onboarding-import" || phase === "onboarding-done";
     return (
       <div className="flex h-full flex-col overflow-hidden bg-background">
         <TitleBar {...chrome} />
-        {phase === "onboarding-done" ? (
+        {phase === "onboarding-import" || phase === "import" ? (
+          <OnboardingImport
+            standalone={phase === "import"}
+            instances={detected}
+            scan={importScan}
+            selectedId={importSelected}
+            onSelect={setImportSelected}
+            choices={importChoices}
+            onChoice={(item, value) => setImportChoices((choices) => ({ ...choices, [item]: value }))}
+            importing={importing}
+            imported={imports.map((entry) => entry.id)}
+            onImport={() => void runImport()}
+            onBack={() => setPhase("onboarding-accounts")}
+            onContinue={() => setPhase(phase === "import" ? "app" : "onboarding-done")}
+          />
+        ) : phase === "onboarding-done" ? (
           <OnboardingDone
-            steps={STEPS}
             accounts={accounts}
-            imports={[]}
+            imports={imports.map((entry) => entry.summary)}
             machine={{
               summary: system ? `${system.totalMemoryGb} Go de mémoire` : "Configuration détectée au premier lancement",
               memoryGb: settings.memoryAuto ? (system?.autoMemoryGb ?? 4) : settings.memoryGb,
             }}
             crashReports={settings.crashReports}
             onCrashReports={(crashReports) => updateSettings({ crashReports })}
-            onBack={() => setPhase("onboarding-accounts")}
+            onBack={() => setPhase("onboarding-import")}
             onStart={async () => {
               await api.finishOnboarding();
               await refreshStored();
@@ -530,14 +781,13 @@ export default function App() {
         ) : (
           <OnboardingAccounts
             standalone={!onboarding}
-            steps={STEPS}
             accounts={accounts}
             login={login}
             onAdd={addAccount}
             onMakeMain={useAccount}
             onRemove={removeAccount}
             onContinue={async () => {
-              if (onboarding) return setPhase("onboarding-done");
+              if (onboarding) return openImport("onboarding-import");
               try {
                 const restored = await api.restoreSession();
                 if (restored) {
@@ -550,6 +800,7 @@ export default function App() {
             }}
           />
         )}
+        <div className="fixed right-4 bottom-4 z-50">{noticeToast}</div>
       </div>
     );
   }
@@ -560,7 +811,7 @@ export default function App() {
     <div className="flex h-full flex-col overflow-hidden bg-background">
       <TitleBar
         {...chrome}
-        session={profile ? { tab, onTab: setTab } : undefined}
+        session={profile ? { tab, onTab: navigate } : undefined}
         account={
           profile && (
             <AccountMenu
@@ -570,7 +821,7 @@ export default function App() {
               onUse={useAccount}
               onRemove={removeAccount}
               onAdd={addAccount}
-              onManage={() => (setTab("settings"), setSettingsTab("general"))}
+              onManage={() => jump("settings", "general")}
             />
           )
         }
@@ -579,21 +830,33 @@ export default function App() {
       />
 
       <div className="flex min-h-0 flex-1">
-        <SideNav tab={tab} onTab={setTab} />
+        <SideNav tab={tab} onTab={navigate} />
         <div className="flex min-w-0 flex-1 flex-col">
+          {from && (
+            <Breadcrumb
+              trail={[TAB_LABELS[from], TAB_LABELS[tab], ...(tab === "settings" ? [settingsTabLabel(settingsTab)] : [])]}
+              onBack={() => navigate(from)}
+            />
+          )}
           {tab === "home" && (
             <HomeScreen
               look={look}
               animateSkin={settings.animatedSkin && settings.animations !== "reduced"}
-              enabledMods={modInfos.filter((mod) => mod.enabled && mod.available).map((mod) => mod.name)}
-              onManageMods={() => setTab("mods")}
-              onOpenConsole={() => setTab("console")}
+              enabledMods={activeInstance?.kind === "vanilla" ? [] : activeInstance?.kind === "fabric" ? personalMods.filter((mod) => mod.enabled && mod.status.kind === "ok").map((mod) => mod.name) : modInfos.filter((mod) => mod.enabled && mod.available).map((mod) => mod.name)}
+              onManageMods={() => jump("mods")}
+              onOpenConsole={() => jump("console")}
               play={play}
-              onPlay={(mode) => startGame(() => api.play(mode))}
-              versions={versions}
-              selectedVersion={versions[0].id}
-              onSelectVersion={() => {}}
-              server={server && { online: server.online, players: server.players }}
+              onPlay={(mode) => {
+                const id = mode ? "clover" : selectedInstance;
+                setLastLaunched(id);
+                startGame(() => mode ? selectInstance("clover").then(() => api.play(mode)) : api.playInstance(id));
+              }}
+              instances={instances}
+              selectedInstance={selectedInstance}
+              onSelectInstance={(id) => selectInstance(id).catch((reason) => setNotice(String(reason)))}
+              onCreateInstance={() => { setInstanceDraft(newInstance()); jump("instances"); }}
+              onManageInstances={() => jump("instances")}
+              server={server && { online: server.online, players: networkPlayers(feed, catalogue?.modes ?? []) }}
               modes={(catalogue?.modes ?? []).map((mode) => ({
                 id: mode.id,
                 name: mode.name,
@@ -603,28 +866,37 @@ export default function App() {
               }))}
               destination="lobby"
               otherServers={otherServers}
-              onPlayServer={(address) => startGame(() => api.playServer(address))}
+              onPlayServer={(address) => { setLastLaunched("clover"); startGame(() => selectInstance("clover").then(() => api.playServer(address))); }}
               news={feed.news ?? []}
               onOpenLink={open}
             />
           )}
 
-          {tab === "mods" && (
-            <ModsScreen
-              view={modsView}
-              onView={setModsView}
-              mods={modInfos}
-              minecraftVersion={catalogue?.minecraft.version ?? ""}
-              onToggle={toggleMod}
-              personal={personalMods}
-              onTogglePersonal={togglePersonalMod}
-              onUpdatePersonal={(id) => changePersonalMod(api.updatePersonalMod(id))}
-              onRemovePersonal={(id) => changePersonalMod(api.removePersonalMod(id))}
-              onAddFiles={(files) => void addPersonalMods(files)}
-              modrinth={{ search: api.searchModrinth, onInstall: (project) => api.installModrinthMod(project).then(refreshPersonalMods), project: api.modrinthProject }}
-              onOpenLink={open}
+          {tab === "instances" && (
+            <div className="flex min-h-0 flex-1">
+            <InstancesScreen
+              instances={instances}
+              selected={selectedInstance}
+              expert={stored.expertInstances}
+              play={play}
+              running={play.kind === "running" ? lastLaunched : null}
+              onSelect={(id) => selectInstance(id).catch((reason) => setNotice(String(reason)))}
+              onView={(expert) => { setStored((current) => current && { ...current, expertInstances: expert }); api.setInstancesView(expert).catch((reason) => setNotice(String(reason))); }}
+              onPlay={(id) => { setLastLaunched(id); startGame(() => selectInstance(id).then(() => api.playInstance(id)).then(refreshInstances)); }}
+              onCreate={(minecraft) => setInstanceDraft(newInstance(minecraft))}
+              onEdit={editInstance}
+              onOpenFolder={(id, folder) => api.openInstanceFolder(id, folder).catch((reason) => setNotice(String(reason)))}
+              mods={modsScreen(true)}
+              contentRevision={contentRevision}
+              onSearch={setSearchKind}
+              onRemove={(id) => api.removeInstance(id).then(refreshInstances).catch((reason) => setNotice(String(reason)))}
             />
+            {instanceDraft && <InstancePanel draft={instanceDraft} onClose={() => setInstanceDraft(null)} onSave={saveInstance} />}
+            </div>
           )}
+
+          {tab === "mods" && activeInstance?.kind === "vanilla" && <main className="flex flex-1 flex-col items-center justify-center gap-4"><h1 className="font-display text-2xl">Vanilla se lance sans mods</h1><p className="text-sm text-muted-foreground">Choisis une instance Fabric ou Clover pour gérer tes mods.</p><button className="text-primary hover:underline" onClick={() => jump("instances")}>Voir les instances</button></main>}
+          {tab === "mods" && activeInstance?.kind !== "vanilla" && modsScreen(false)}
 
           {tab === "skins" && profile && (
             <SkinsScreen
@@ -666,6 +938,7 @@ export default function App() {
                 gameDir: storage?.gameDir ?? "",
               }}
               onOpenGameDir={() => void api.openGameDir()}
+              onImport={() => openImport("import")}
               onChangeGameDir={() => {}}
               onCleanStorage={async () => {
                 await api.cleanStorage();
@@ -696,6 +969,20 @@ export default function App() {
         />
       )}
 
+      <ModrinthDialog
+        open={searchKind !== null}
+        onOpenChange={(next) => !next && setSearchKind(null)}
+        minecraftVersion={(searchKind === "modpack" ? null : activeInstance?.minecraft) ?? catalogue?.minecraft.version ?? ""}
+        kinds={searchKinds}
+        kind={searchKind ?? "mod"}
+        onKind={setSearchKind}
+        installed={new Set(personalMods.flatMap((mod) => (mod.projectId ? [mod.projectId] : [])))}
+        search={api.searchModrinth}
+        onInstall={installFromModrinth}
+        worlds={worlds}
+        progress={modpackProgress}
+      />
+
       <CrashDialog
         open={crash !== null}
         exitCode={crash?.code ?? null}
@@ -704,21 +991,14 @@ export default function App() {
         onOpenLogs={() => void api.openLogsDir()}
         onRelaunch={() => {
           setCrash(null);
-          startGame(() => api.play());
+          startGame(() => api.playInstance(lastLaunched));
         }}
         onOpenChange={(openDialog) => !openDialog && setCrash(null)}
       />
 
       <div className="fixed right-4 bottom-4 z-50 flex flex-col items-end gap-3">
         {update && <UpdateToast update={update} onInstall={() => void installUpdate()} onDismiss={() => setUpdate(null)} />}
-        {notice && (
-          <div role="alert" className="mc-frame flex max-w-[420px] items-start gap-3 bg-card px-4 py-3 text-[13px] shadow-[0_12px_32px_rgb(0_0_0/0.5)]">
-            <p className="flex-1 leading-snug">{notice}</p>
-            <button type="button" onClick={() => setNotice(null)} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
-              Fermer
-            </button>
-          </div>
-        )}
+        {noticeToast}
       </div>
     </div>
   );

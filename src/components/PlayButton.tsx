@@ -18,20 +18,21 @@ type Props = {
   /** Sous « Jouer » : la version qui sera lancée, par exemple « Minecraft 26.2 · Fabric ». */
   version: string;
   /** Petite dalle à droite : changement de version. */
-  picker: ReactNode;
+  picker?: ReactNode;
+  compact?: boolean;
 };
 
-export function PlayButton({ state, onPlay, onOpenConsole, version, picker }: Props) {
+export function PlayButton({ state, onPlay, onOpenConsole, version, picker, compact }: Props) {
   const progress = state.kind === "installing" ? state.progress : undefined;
   const ratio = progress && progress.total > 0 ? progress.done / progress.total : 0;
 
   return (
-    <div className="flex w-[330px] flex-col items-stretch gap-3">
+    <div className={`flex shrink-0 ${picker ? "w-[330px]" : "w-full"} flex-col items-stretch gap-3`}>
       <div className="flex gap-3">
-        <button type="button" className="play-slab h-[86px] min-w-0 flex-1 overflow-hidden" disabled={state.kind !== "ready"} onClick={onPlay}>
+        <button type="button" className={`play-slab ${compact ? "h-16" : "h-[86px]"} min-w-0 flex-1 overflow-hidden`} disabled={state.kind !== "ready"} onClick={onPlay}>
           {state.kind === "installing" && <span className="play-slab-fill" style={{ transform: `scaleX(${ratio})` }} aria-hidden />}
           <span className="relative flex flex-col items-center gap-1.5">
-            <span className="font-display text-[38px] leading-none tracking-wide uppercase [text-shadow:0_2px_0_rgb(255_255_255/0.35)]">
+            <span className={`font-display ${compact ? "text-[30px]" : "text-[38px]"} leading-none tracking-wide uppercase [text-shadow:0_2px_0_rgb(255_255_255/0.35)]`}>
               {state.kind === "ready" && "Jouer"}
               {state.kind === "installing" && (progress ? `${Math.floor(ratio * 100)} %` : "Préparation")}
               {state.kind === "running" && "En jeu"}
@@ -42,7 +43,7 @@ export function PlayButton({ state, onPlay, onOpenConsole, version, picker }: Pr
         {picker}
       </div>
 
-      <p className="relative min-h-4 text-center text-xs font-semibold text-white [text-shadow:0_1px_3px_rgb(0_0_0/0.7)]" aria-live="polite">
+      {(!compact || state.kind !== "ready" || state.error) && <p className="relative min-h-4 text-center text-xs font-semibold text-white [text-shadow:0_1px_3px_rgb(0_0_0/0.7)]" aria-live="polite">
         {state.kind === "installing" && progress && (
           <>
             {PHASES[progress.phase]} · <span className="font-pixel text-[11px]">{number.format(progress.done)}/{number.format(progress.total)}</span>
@@ -57,7 +58,7 @@ export function PlayButton({ state, onPlay, onOpenConsole, version, picker }: Pr
           </>
         )}
         {state.kind === "ready" && state.error && <span className="text-[#ffb3b0]">{state.error}</span>}
-      </p>
+      </p>}
     </div>
   );
 }

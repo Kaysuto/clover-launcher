@@ -1,6 +1,7 @@
-//! API publique de Modrinth (https://docs.modrinth.com/api/), pour « Mes mods » : recherche,
-//! version compatible d'un projet, identification d'un fichier par son empreinte, page d'un mod.
-//! Toujours filtré sur Fabric et sur la version de Minecraft du serveur.
+//! API publique de Modrinth (https://docs.modrinth.com/api/) : recherche de mods, packs de
+//! ressources, shaders, datapacks et modpacks, version compatible d'un projet, identification d'un
+//! fichier par son empreinte, page d'un projet. Filtré sur la version de Minecraft de l'instance
+//! (sauf les modpacks, qui créent la leur) et sur Fabric pour ce qui charge du code.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -59,6 +60,9 @@ pub struct Hit {
     pub author: String,
     pub icon_url: Option<String>,
     pub downloads: u64,
+    /// Sélection du catalogue Clover, même avant le premier téléchargement du jeu.
+    #[serde(default, skip_deserializing)]
+    pub provided_by_clover: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -66,6 +70,14 @@ pub struct Hit {
 pub struct SearchPage {
     pub hits: Vec<Hit>,
     pub total_hits: u64,
+}
+
+impl SearchPage {
+    pub fn mark_provided(&mut self, selected: &[&super::manifest::Mod]) {
+        for hit in &mut self.hits {
+            hit.provided_by_clover = selected.iter().any(|m| m.id == hit.slug && m.available && m.file.is_some());
+        }
+    }
 }
 
 /// Page d'un mod. Mêmes noms que le type `ModrinthProject` du front.
@@ -117,20 +129,54 @@ pub struct Image {
     ordering: i64,
 }
 
+/// Type de projet cherché ; mêmes noms que le type `ModrinthKind` du front.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    Mod,
+    Resourcepack,
+    Shader,
+    Datapack,
+    Modpack,
+}
+
+impl Kind {
+    /// « Loader » Modrinth des fichiers voulus : celui qui sait les charger.
+    pub fn loader(self) -> &'static str {
+        match self {
+            Kind::Mod | Kind::Modpack => "fabric",
+            Kind::Resourcepack => "minecraft",
+            Kind::Shader => "iris",
+            Kind::Datapack => "datapack",
+        }
+    }
+
+    fn facets(self, minecraft: &str) -> serde_json::Value {
+        let version = format!("versions:{minecraft}");
+        match self {
+            // Utiles côté client et sans rien exiger du serveur.
+            Kind::Mod => serde_json::json!([
+                ["project_type:mod"],
+                ["categories:fabric"],
+                [version],
+                ["client_side:required", "client_side:optional"],
+                ["server_side:optional", "server_side:unsupported"],
+            ]),
+            Kind::Resourcepack => serde_json::json!([["project_type:resourcepack"], [version]]),
+            Kind::Shader => serde_json::json!([["project_type:shader"], ["categories:iris"], [version]]),
+            Kind::Datapack => serde_json::json!([["project_type:datapack"], [version]]),
+            Kind::Modpack => serde_json::json!([["project_type:modpack"], ["categories:fabric"]]),
+        }
+    }
+}
+
 fn endpoint(path: &str, params: &[(&str, &str)]) -> Result<Url> {
     Url::parse_with_params(&format!("{API}/{path}"), params).map_err(|e| GameError::InvalidVersion(e.to_string()))
 }
 
-/// Mods Fabric pour `minecraft`, utiles côté client et qui n'exigent rien du serveur.
-/// Sans texte, Modrinth renvoie les plus téléchargés.
-pub async fn search(http: &reqwest::Client, query: &str, minecraft: &str, offset: u32) -> Result<SearchPage> {
-    let facets = serde_json::json!([
-        ["project_type:mod"],
-        ["categories:fabric"],
-        [format!("versions:{minecraft}")],
-        ["client_side:required", "client_side:optional"],
-        ["server_side:optional", "server_side:unsupported"],
-    ]);
+/// Projets de type `kind` pour `minecraft`. Sans texte, Modrinth renvoie les plus téléchargés.
+pub async fn search(http: &reqwest::Client, kind: Kind, query: &str, minecraft: &str, offset: u32) -> Result<SearchPage> {
+    let facets = kind.facets(minecraft);
     let index = if query.trim().is_empty() { "downloads" } else { "relevance" };
     let url = endpoint(
         "search",
@@ -151,12 +197,19 @@ pub async fn search(http: &reqwest::Client, query: &str, minecraft: &str, offset
     Ok(response.json().await?)
 }
 
-/// Dernière version Fabric de `project` (identifiant ou slug) pour `minecraft`, stable de
-/// préférence.
-pub async fn compatible_version(http: &reqwest::Client, project: &str, minecraft: &str) -> Result<Option<Version>> {
-    let loaders = serde_json::json!(["fabric"]).to_string();
+/// Dernière version de `project` (identifiant ou slug) pour `loader` et `minecraft` (toutes
+/// versions sans lui), stable de préférence.
+pub async fn compatible_version(http: &reqwest::Client, project: &str, loader: &str, minecraft: Option<&str>) -> Result<Option<Version>> {
+    if !valid_project(project) {
+        return Err(GameError::InvalidVersion(format!("projet Modrinth « {project} »")));
+    }
+    let loaders = serde_json::json!([loader]).to_string();
     let game_versions = serde_json::json!([minecraft]).to_string();
-    let url = endpoint(&format!("project/{project}/version"), &[("loaders", &loaders), ("game_versions", &game_versions)])?;
+    let mut params = vec![("loaders", loaders.as_str())];
+    if minecraft.is_some() {
+        params.push(("game_versions", &game_versions));
+    }
+    let url = endpoint(&format!("project/{project}/version"), &params)?;
     let response = http
         .get(url)
         .timeout(TIMEOUT)
@@ -210,6 +263,22 @@ fn valid_project(project: &str) -> bool {
     (1..=64).contains(&project.len())
         && !project.starts_with('.')
         && project.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+/// Nom et logo d'un projet, pour « Mes mods » et les packs des instances.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Summary {
+    pub id: String,
+    pub title: String,
+    pub icon_url: Option<String>,
+}
+
+/// Noms et logos de plusieurs projets en une requête, par identifiant.
+pub async fn projects(http: &reqwest::Client, ids: &[String]) -> Result<HashMap<String, Summary>> {
+    let url = endpoint("projects", &[("ids", &serde_json::to_string(ids).expect("liste sérialisable"))])?;
+    let response = http.get(url).timeout(TIMEOUT).send().await?.error_for_status()?;
+    let list: Vec<Summary> = response.json().await?;
+    Ok(list.into_iter().map(|summary| (summary.id.clone(), summary)).collect())
 }
 
 /// Projet d'une version précise (dépendance qui ne donne que `version_id`).

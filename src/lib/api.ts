@@ -2,11 +2,12 @@
  * Appels au cœur Rust (commandes Tauri de `src-tauri/src/lib.rs`), typés pour l'interface.
  * Les erreurs arrivent en texte français, prêtes à afficher.
  */
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import type { Instance, InstanceEntry, InstanceInput, AvailableVersion, ContentEntry, ContentFolder, PlaySession } from "@/types";
 
 import type { Settings } from "@/screens/SettingsScreen";
 import type { RecentVote } from "@/components/VoteTicker";
-import type { ConsoleSnapshot, LauncherUpdate, ModCategory, ModrinthPage, ModrinthProject, NewsItem, PersonalMod, Profile, RecentServer, SkinModel } from "@/types";
+import type { ConsoleSnapshot, DetectedInstance, ImportItem, ImportResult, LauncherUpdate, ModCategory, ModrinthKind, ModrinthPage, ModrinthProject, NewsItem, PersonalMod, Profile, RecentServer, SkinModel } from "@/types";
 
 export type AccountRef = { uuid: string; name: string; skinUrl: string | null };
 
@@ -18,6 +19,10 @@ export type Stored = {
   disabledPersonalMods: string[];
   /** Serveurs rejoints en jeu, du plus récent au plus ancien, serveurs Clover Games compris. */
   recentServers: RecentServer[];
+  instances: Instance[];
+  selectedInstance: string | null;
+  expertInstances: boolean;
+  lastLaunchedInstance: string | null;
 };
 
 /** Manifeste distant signé, tel que vérifié par le launcher. */
@@ -51,8 +56,33 @@ export type SiteFeed = {
 export type SystemInfo = { totalMemoryGb: number; autoMemoryGb: number; java: string | null; launcher: string; store: boolean };
 export type StorageUsage = { parts: { id: string; label: string; bytes: number }[]; reclaimable: number; gameDir: string };
 export type SkinEntry = { id: string; name: string; model: SkinModel; texture: string };
+export type TrayState = { available: boolean; canPlay: boolean };
 
 export const api = {
+  trayState: () => invoke<TrayState>("tray_state"),
+  trayAction: (action: "open" | "play" | "instances" | "settings" | "quit") => invoke<void>("tray_menu_action", { action }),
+  hideTrayMenu: () => invoke<void>("hide_tray_menu"),
+  setTrayState: (available: boolean, canPlay: boolean) => invoke<void>("set_tray_state", { available, canPlay }),
+  listInstances: () => invoke<InstanceEntry[]>("list_instances"),
+  instanceVersions: () => invoke<AvailableVersion[]>("instance_versions"),
+  fabricLoaders: (minecraft: string) => invoke<string[]>("fabric_loaders", { minecraft }),
+  saveInstance: (id: string | null, input: InstanceInput) => invoke<string>("save_instance", { id, input }),
+  selectInstance: (id: string) => invoke<void>("select_instance", { id }),
+  setInstancesView: (expert: boolean) => invoke<void>("set_instances_view", { expert }),
+  removeInstance: (id: string) => invoke<void>("remove_instance", { id }),
+  openInstanceFolder: (id: string, folder: string) => invoke<void>("open_instance_folder", { id, folder }),
+  setInstanceCatalogue: (mods: string[]) => invoke<void>("set_instance_catalogue", { mods }),
+  playHistory: (id: string) => invoke<PlaySession[]>("play_history", { id }),
+  /** Les chemins d'image deviennent des adresses du protocole `asset`, seules lisibles par la WebView. */
+  instanceContent: async (id: string, folder: ContentFolder) =>
+    (await invoke<ContentEntry[]>("instance_content", { id, folder })).map((entry) => ({ ...entry, image: entry.image && convertFileSrc(entry.image) })),
+  /** Active ou désactive un pack de ressources, un shader ou un datapack. */
+  setContentEnabled: (id: string, folder: ContentFolder, item: ContentEntry, enabled: boolean) =>
+    invoke<void>("set_content_enabled", { id, folder, name: item.name, world: item.world, enabled }),
+  /** Met un élément d'un onglet d'instance à la corbeille du système. */
+  trashContent: (id: string, folder: ContentFolder, item: ContentEntry) =>
+    invoke<void>("trash_content", { id, folder, name: item.name, world: item.world, enabled: item.enabled }),
+  playInstance: (id: string) => invoke<void>("play", { mode: null, server: null, instanceId: id }),
   getStored: () => invoke<Stored>("get_stored"),
   restoreSession: () => invoke<Profile | null>("restore_session"),
   login: () => invoke<Profile>("login"),
@@ -65,6 +95,10 @@ export const api = {
   serverStatus: (host: string) => invoke<ServerStatus>("server_status", { host }),
   siteFeed: () => invoke<SiteFeed>("site_feed"),
   systemInfo: () => invoke<SystemInfo>("system_info"),
+  /** Installations des autres launchers ; jamais leurs comptes ni leurs jetons. */
+  detectInstallations: () => invoke<DetectedInstance[]>("detect_installations"),
+  /** Copie dans l'instance Clover intégrée ; avancement par l'évènement `import-progress`. */
+  importInstallation: (id: string, choices: Record<ImportItem, boolean>) => invoke<ImportResult>("import_installation", { id, choices }),
   storageUsage: () => invoke<StorageUsage>("storage_usage"),
   cleanStorage: () => invoke<number>("clean_storage"),
   openGameDir: () => invoke<void>("open_game_dir"),
@@ -84,15 +118,21 @@ export const api = {
   /** Octets bruts plutôt qu'un tableau JSON : un .jar pèse souvent plusieurs Mo. */
   addPersonalMod: async (file: File) =>
     invoke<void>("add_personal_mod", new Uint8Array(await file.arrayBuffer()), { headers: { "x-filename": encodeURIComponent(file.name) } }),
+  /** Dépendances obligatoires des mods ajoutés à la main ; `missing` : sans version pour ce Minecraft. */
+  installPersonalDependencies: (files: string[]) => invoke<{ added: string[]; missing: string[] }>("install_personal_dependencies", { files }),
   removePersonalMod: (id: string) => invoke<void>("remove_personal_mod", { id }),
   setPersonalModEnabled: (id: string, enabled: boolean) => invoke<void>("set_personal_mod_enabled", { id, enabled }),
   updatePersonalMod: (id: string) => invoke<void>("update_personal_mod", { id }),
-  searchModrinth: (query: string, offset: number) => invoke<ModrinthPage>("search_modrinth", { query, offset }),
+  searchModrinth: (kind: ModrinthKind, query: string, offset: number) => invoke<ModrinthPage>("search_modrinth", { kind, query, offset }),
   /** Renvoie les fichiers ajoutés (le mod et ses dépendances absentes). */
   modrinthProject: (project: string) => invoke<ModrinthProject>("modrinth_project", { project }),
   installModrinthMod: (project: string) => invoke<string[]>("install_modrinth_mod", { project }),
+  /** Pack de ressources, shader ou datapack (`world` : dossier du monde) pour l'instance choisie. */
+  installModrinthContent: (kind: ModrinthKind, project: string, world?: string) => invoke<string>("install_modrinth_content", { kind, project, world: world ?? null }),
+  /** Crée et choisit une instance à partir du modpack ; renvoie son identifiant. */
+  installModpack: (project: string) => invoke<string>("install_modpack", { project }),
   /** `mode` : identifiant d'un mode du manifeste à rejoindre directement, absent pour le Lobby. */
-  play: (mode?: string) => invoke<void>("play", { mode: mode ?? null, server: null }),
+  play: (mode?: string) => invoke<void>("play", { mode: mode ?? null, server: null, instanceId: "clover" }),
   /** `address` : un des `recentServers`, tout autre serveur est refusé. */
-  playServer: (address: string) => invoke<void>("play", { mode: null, server: address }),
+  playServer: (address: string) => invoke<void>("play", { mode: null, server: address, instanceId: "clover" }),
 };

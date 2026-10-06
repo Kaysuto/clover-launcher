@@ -1,16 +1,18 @@
 //! Installation et lancement de Minecraft pour Clover Games.
 
 pub mod console;
+pub mod content;
 pub(crate) mod download;
-mod install;
+pub(crate) mod install;
 mod java;
-mod launch;
+pub(crate) mod launch;
 pub mod manifest;
 pub mod modrinth;
-mod mods;
+pub(crate) mod mods;
 pub mod personal;
 pub mod quick_play;
 mod version;
+pub(crate) mod window_title;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -25,6 +27,8 @@ use crate::store::RecentServer;
 pub enum GameError {
     #[error("Aucun compte connecté.")]
     NotSignedIn,
+    #[error("Minecraft est déjà ouvert ou en cours de lancement. Ferme le jeu avant de lancer une autre instance.")]
+    AlreadyRunning,
     #[error("Ce mode ne se rejoint pas directement : passe par le Lobby.")]
     NoQuickPlay,
     #[error("Ce serveur ne fait pas partie de ceux que tu as déjà rejoints.")]
@@ -99,7 +103,11 @@ impl Paths {
             .home_dir()
             .map_err(|e| GameError::Io(std::io::Error::other(e.to_string())))?
             .join(".cloverlauncher");
-        Ok(Self {
+        Ok(Self::from_root(root))
+    }
+
+    pub(crate) fn from_root(root: PathBuf) -> Self {
+        Self {
             root: root.clone(),
             libraries: root.join("libraries"),
             assets: root.join("assets"),
@@ -113,7 +121,7 @@ impl Paths {
             mods: root.join("game").join("mods"),
             personal_mods: root.join("personal-mods"),
             quick_play_log: root.join("quick-play.json"),
-        })
+        }
     }
 }
 
@@ -174,8 +182,9 @@ pub async fn play(
     options: LaunchOptions,
     destination: Destination,
     on_join: impl Fn(RecentServer) + Send + 'static,
+    instance: &crate::instances::Instance,
 ) -> Result<()> {
-    let paths = Paths::new(app)?;
+    let paths = crate::instances::paths(Paths::new(app)?, instance)?;
     let http = download::client();
     let progress = |progress: Progress| {
         let _ = app.emit("install-progress", progress);
@@ -200,5 +209,5 @@ pub async fn play(
         progress(Progress { phase: "mods", done, total })
     })
     .await?;
-    launch::spawn(app, &paths, installation, session, &server, &options, on_join).await
+    launch::spawn(app, &paths, installation, session, Some(&server), &options, on_join).await
 }

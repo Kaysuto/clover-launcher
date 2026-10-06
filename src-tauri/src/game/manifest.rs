@@ -306,6 +306,25 @@ mod tests {
     }
 
     #[test]
+    fn search_recognizes_clover_defaults_and_selected_dependencies_by_slug() {
+        let mut manifest: Manifest = serde_json::from_str(MANIFEST).unwrap();
+        manifest.mods[1].requires.push("fabric-api".into());
+        let hits = ["sodium", "iris", "fabric-api", "betterf3", "other"].map(|slug| serde_json::json!({
+            "project_id": format!("id-{slug}"), "slug": slug, "title": slug,
+            "description": "", "author": "a", "icon_url": null, "downloads": 1
+        }));
+        let mut page: super::super::modrinth::SearchPage = serde_json::from_value(serde_json::json!({"hits": hits, "total_hits": 5})).unwrap();
+        page.mark_provided(&manifest.mods_to_install(&manifest.default_mods()));
+        assert_eq!(page.hits.iter().map(|hit| hit.provided_by_clover).collect::<Vec<_>>(), [true, false, true, false, false]);
+        assert_eq!(serde_json::to_value(&page).unwrap()["hits"][0]["providedByClover"], true);
+
+        page.mark_provided(&manifest.mods_to_install(&HashSet::new()));
+        assert!(page.hits.iter().all(|hit| !hit.provided_by_clover));
+        page.mark_provided(&manifest.mods_to_install(&HashSet::from(["iris".into()])));
+        assert_eq!(page.hits.iter().map(|hit| hit.provided_by_clover).collect::<Vec<_>>(), [true, true, true, false, false]);
+    }
+
+    #[test]
     fn joins_a_mode_only_when_the_manifest_gives_its_address() {
         let manifest: Manifest = serde_json::from_str(MANIFEST).unwrap();
         assert_eq!(manifest.server_for(None), Some("play.clovergames.fr"));

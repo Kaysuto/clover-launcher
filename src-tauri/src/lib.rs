@@ -1,5 +1,8 @@
 mod auth;
 mod game;
+mod history;
+mod import;
+mod instances;
 mod msix;
 mod presence;
 mod site;
@@ -8,15 +11,23 @@ mod status;
 mod storage;
 mod store;
 mod update;
+#[cfg(windows)]
+mod tray_popup;
+
+/// Mode interne sans interface ni connexion : suit seulement la fenêtre du jeu lancé.
+pub fn run_game_window_helper() -> bool {
+    game::window_title::run_helper()
+}
 
 use std::path::PathBuf;
 use std::sync::Mutex as SyncMutex;
 
 use presence::Presence;
 use serde::Serialize;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Listener, Manager, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Listener, Manager, State, WindowEvent};
+use tauri_plugin_window_state::StateFlags;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::Mutex;
@@ -27,6 +38,80 @@ const MINIMIZED_ARG: &str = "--minimized";
 /// Session du compte actif. Le jeton Minecraft reste côté Rust ; l'interface ne voit que le profil.
 #[derive(Default)]
 struct CurrentSession(Mutex<Option<auth::Session>>);
+
+#[derive(Default)]
+struct LaunchGate(Mutex<()>);
+
+struct TrayMenu {
+    _menu: Menu<tauri::Wry>,
+    play: MenuItem<tauri::Wry>,
+    navigation: Vec<MenuItem<tauri::Wry>>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrayState {
+    available: bool,
+    can_play: bool,
+}
+
+impl TrayMenu {
+    fn snapshot(&self) -> tauri::Result<TrayState> {
+        Ok(TrayState { available: self.navigation[0].is_enabled()?, can_play: self.play.is_enabled()? })
+    }
+}
+
+#[tauri::command]
+fn tray_state(menu: State<'_, TrayMenu>) -> Result<TrayState, String> {
+    menu.snapshot().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn hide_tray_menu(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("tray-menu") {
+        let _ = window.hide();
+    }
+}
+
+fn handle_tray_action(app: &AppHandle, action: &str) -> Result<(), String> {
+    let state = app.state::<TrayMenu>().snapshot().map_err(|e| e.to_string())?;
+    match action {
+        "open" | "quit" => {}
+        "play" if state.available && state.can_play => {}
+        "instances" | "settings" if state.available => {}
+        _ => return Err("Ce raccourci est indisponible pour le moment.".into()),
+    }
+    hide_tray_menu(app.clone());
+    if action == "quit" {
+        app.exit(0);
+    } else {
+        show_main_window(app);
+        if action != "open" {
+            if let Some(window) = app.get_webview_window("main") {
+                window.emit("tray-action", action).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn tray_menu_action(app: AppHandle, action: String) -> Result<(), String> {
+    handle_tray_action(&app, &action)
+}
+
+/// The tray follows the existing interface state; launching still goes through `play`.
+#[tauri::command]
+fn set_tray_state(app: AppHandle, menu: State<'_, TrayMenu>, available: bool, can_play: bool) -> Result<(), String> {
+    menu.play.set_enabled(available && can_play).map_err(|e| e.to_string())?;
+    for item in &menu.navigation {
+        item.set_enabled(available).map_err(|e| e.to_string())?;
+    }
+    if let Some(window) = app.get_webview_window("tray-menu") {
+        window.emit("tray-state", menu.snapshot().map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
 
 /// Réglages et comptes (`launcher.json`), enregistrés à chaque modification.
 struct AppState {
@@ -42,8 +127,10 @@ impl AppState {
 
     fn update<R>(&self, change: impl FnOnce(&mut store::Stored) -> R) -> Result<R, String> {
         let mut stored = self.stored.lock().expect("réglages");
-        let result = change(&mut stored);
-        stored.save(&self.path).map_err(|e| format!("Impossible d'enregistrer les réglages : {e}"))?;
+        let mut next = stored.clone();
+        let result = change(&mut next);
+        next.save(&self.path).map_err(|e| format!("Impossible d'enregistrer les réglages : {e}"))?;
+        *stored = next;
         Ok(result)
     }
 
@@ -62,6 +149,13 @@ fn account_ref(profile: &auth::Profile) -> store::AccountRef {
     store::AccountRef { uuid: profile.uuid.clone(), name: profile.name.clone(), skin_url: profile.skin.as_ref().map(|skin| skin.url.clone()) }
 }
 
+/// Session du compte actif, reprise par Discord (tête du joueur en petite image).
+async fn activate(current: &CurrentSession, presence: &Presence, session: Option<auth::Session>) {
+    let player = session.as_ref().map(|s| presence::Player { uuid: s.profile.uuid.clone(), name: s.profile.name.clone() });
+    *current.0.lock().await = session;
+    presence.set_player(player).await;
+}
+
 #[tauri::command]
 fn get_stored(state: State<'_, AppState>) -> store::Stored {
     state.snapshot()
@@ -69,7 +163,7 @@ fn get_stored(state: State<'_, AppState>) -> store::Stored {
 
 /// Rouvre la session du compte actif (et reprend le compte de la toute première version).
 #[tauri::command]
-async fn restore_session(state: State<'_, AppState>, current: State<'_, CurrentSession>) -> Result<Option<auth::Profile>, String> {
+async fn restore_session(state: State<'_, AppState>, current: State<'_, CurrentSession>, presence: State<'_, Presence>) -> Result<Option<auth::Profile>, String> {
     let active = state.snapshot().active_account;
     let session = match active {
         Some(uuid) => auth::restore(&uuid).await,
@@ -82,13 +176,13 @@ async fn restore_session(state: State<'_, AppState>, current: State<'_, CurrentS
         state.update(|stored| stored.upsert_account(account_ref(&session.profile)))?;
     }
     let profile = session.as_ref().map(|s| s.profile.clone());
-    *current.0.lock().await = session;
+    activate(&current, &presence, session).await;
     Ok(profile)
 }
 
 /// Ajoute un compte. Le premier ajouté devient le compte actif.
 #[tauri::command]
-async fn login(app: AppHandle, state: State<'_, AppState>, current: State<'_, CurrentSession>) -> Result<auth::Profile, String> {
+async fn login(app: AppHandle, state: State<'_, AppState>, current: State<'_, CurrentSession>, presence: State<'_, Presence>) -> Result<auth::Profile, String> {
     let session = auth::login(&app).await.inspect_err(|e| eprintln!("[auth] échec de la connexion : {e}")).map_err(|e| e.to_string())?;
     let profile = session.profile.clone();
     eprintln!("[auth] connecté : {} ({})", profile.name, profile.uuid);
@@ -97,23 +191,23 @@ async fn login(app: AppHandle, state: State<'_, AppState>, current: State<'_, Cu
         stored.active_account.clone()
     })?;
     if active.as_deref() == Some(profile.uuid.as_str()) {
-        *current.0.lock().await = Some(session);
+        activate(&current, &presence, Some(session)).await;
     }
     Ok(profile)
 }
 
 #[tauri::command]
-async fn use_account(uuid: String, state: State<'_, AppState>, current: State<'_, CurrentSession>) -> Result<auth::Profile, String> {
+async fn use_account(uuid: String, state: State<'_, AppState>, current: State<'_, CurrentSession>, presence: State<'_, Presence>) -> Result<auth::Profile, String> {
     let session = auth::restore(&uuid).await.map_err(|e| e.to_string())?.ok_or("Ce compte doit se reconnecter.")?;
     state.update(|stored| stored.active_account = Some(uuid))?;
     let profile = session.profile.clone();
-    *current.0.lock().await = Some(session);
+    activate(&current, &presence, Some(session)).await;
     Ok(profile)
 }
 
 /// Retire un compte ; renvoie le profil du compte actif qui le remplace, s'il y en a un.
 #[tauri::command]
-async fn remove_account(uuid: String, state: State<'_, AppState>, current: State<'_, CurrentSession>) -> Result<Option<auth::Profile>, String> {
+async fn remove_account(uuid: String, state: State<'_, AppState>, current: State<'_, CurrentSession>, presence: State<'_, Presence>) -> Result<Option<auth::Profile>, String> {
     auth::logout(&uuid).map_err(|e| e.to_string())?;
     let active = state.update(|stored| {
         stored.remove_account(&uuid);
@@ -124,7 +218,7 @@ async fn remove_account(uuid: String, state: State<'_, AppState>, current: State
         None => None,
     };
     let profile = session.as_ref().map(|s| s.profile.clone());
-    *current.0.lock().await = session;
+    activate(&current, &presence, session).await;
     Ok(profile)
 }
 
@@ -241,7 +335,9 @@ async fn install_update(app: AppHandle, pending: State<'_, update::PendingUpdate
 
 #[tauri::command]
 fn open_logs_dir(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let logs = state.root.join("logs");
+    let stored = state.snapshot();
+    let last = instances::resolve(&stored, stored.last_launched_instance.as_deref().or(Some(instances::BUILTIN))).unwrap_or_else(|_| instances::Instance::builtin());
+    let logs = instances::paths(game::Paths::new(&app).map_err(|e| e.to_string())?, &last).map_err(|e| e.to_string())?.logs;
     std::fs::create_dir_all(&logs).map_err(|e| e.to_string())?;
     app.opener().open_path(logs.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
 }
@@ -257,13 +353,12 @@ async fn list_skins(app: AppHandle, state: State<'_, AppState>) -> Result<SkinLi
     let root = state.root.clone();
     let manifest = game::catalogue(&app).await.ok();
     tauri::async_runtime::spawn_blocking(move || {
-        let defaults = manifest
+        let client_jar = manifest
             .map(|manifest| {
                 let version = manifest.minecraft.version;
-                skins::defaults(&root.join("versions").join(&version).join(format!("{version}.jar")))
-            })
-            .unwrap_or_default();
-        SkinLists { library: skins::library(&root), defaults }
+                root.join("versions").join(&version).join(format!("{version}.jar"))
+            });
+        SkinLists { library: skins::library(&root), defaults: skins::defaults(client_jar.as_deref()) }
     })
     .await
     .map_err(|e| e.to_string())
@@ -286,17 +381,49 @@ fn remove_skin(id: String, state: State<'_, AppState>) -> Result<(), skins::Skin
 
 #[tauri::command]
 async fn list_personal_mods(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<game::personal::PersonalMod>, game::GameError> {
-    let paths = game::Paths::new(&app)?;
-    let manifest = game::catalogue(&app).await?;
-    let disabled = state.snapshot().disabled_personal_mods;
-    Ok(game::personal::list(&game::download::client(), &paths.personal_mods, &disabled, &manifest.minecraft.version).await)
+    let (paths, minecraft, disabled, _, _) = instances::mod_context(&app, &state.snapshot()).await?;
+    Ok(game::personal::list(&game::download::client(), &paths.personal_mods, &disabled, &minecraft).await)
 }
 
-/// Recherche de mods Fabric sur Modrinth, pour la version de Minecraft du serveur.
+/// Recherche sur Modrinth pour la version de Minecraft de l'instance choisie. Les mods marquent
+/// ceux que le catalogue Clover fournit déjà.
 #[tauri::command]
-async fn search_modrinth(query: String, offset: u32, app: AppHandle) -> Result<game::modrinth::SearchPage, game::GameError> {
-    let manifest = game::catalogue(&app).await?;
-    game::modrinth::search(&game::download::client(), &query, &manifest.minecraft.version, offset).await
+async fn search_modrinth(kind: game::modrinth::Kind, query: String, offset: u32, app: AppHandle, state: State<'_, AppState>) -> Result<game::modrinth::SearchPage, game::GameError> {
+    let http = game::download::client();
+    if kind != game::modrinth::Kind::Mod {
+        let (_, _, minecraft) = instances::game_context(&app, &state.snapshot()).await?;
+        return game::modrinth::search(&http, kind, &query, &minecraft, offset).await;
+    }
+    let (_, minecraft, _, manifest, enabled) = instances::mod_context(&app, &state.snapshot()).await?;
+    let mut page = game::modrinth::search(&http, kind, &query, &minecraft, offset).await?;
+    if let Some(manifest) = manifest { page.mark_provided(&manifest.mods_to_install(&enabled)); }
+    Ok(page)
+}
+
+/// Pack de ressources, shader ou datapack (dans le monde `world`) pour l'instance choisie ;
+/// renvoie le nom du fichier. Un shader sur une instance Fabric installe aussi Iris.
+#[tauri::command]
+async fn install_modrinth_content(kind: game::modrinth::Kind, project: String, world: Option<String>, app: AppHandle, state: State<'_, AppState>) -> Result<String, game::GameError> {
+    use game::modrinth::Kind;
+    let http = game::download::client();
+    let (instance, paths, minecraft) = instances::game_context(&app, &state.snapshot()).await?;
+    let dir = match kind {
+        Kind::Resourcepack => paths.game.join("resourcepacks"),
+        Kind::Shader if instance.kind == instances::Kind::Vanilla => {
+            return Err(game::GameError::InvalidVersion("les shaders demandent Iris : choisis une instance Fabric ou Clover".into()));
+        }
+        Kind::Shader => paths.game.join("shaderpacks"),
+        Kind::Datapack => {
+            let world = world.ok_or_else(|| game::GameError::InvalidVersion("choisis un monde".into()))?;
+            game::content::world_dir(&paths.game.join("saves"), &world)?.join("datapacks")
+        }
+        Kind::Mod | Kind::Modpack => return Err(game::GameError::InvalidVersion("type de contenu inattendu".into())),
+    };
+    let filename = game::content::install_archive(&http, &dir, kind, &project, &minecraft).await?;
+    if kind == Kind::Shader && instance.kind == instances::Kind::Fabric {
+        game::personal::install(&http, &paths.personal_mods, "iris", &minecraft, &[]).await?;
+    }
+    Ok(filename)
 }
 
 /// Page Modrinth d'un mod du catalogue ou de « Mes mods ». Si le catalogue a une description en
@@ -313,15 +440,15 @@ async fn modrinth_project(project: String, app: AppHandle) -> Result<game::modri
 
 /// Installe un mod trouvé sur Modrinth (et ses dépendances) dans « Mes mods ».
 #[tauri::command]
-async fn install_modrinth_mod(project: String, app: AppHandle) -> Result<Vec<String>, game::GameError> {
-    let paths = game::Paths::new(&app)?;
-    let manifest = game::catalogue(&app).await?;
-    game::personal::install(&game::download::client(), &paths.personal_mods, &project, &manifest.minecraft.version).await
+async fn install_modrinth_mod(project: String, app: AppHandle, state: State<'_, AppState>) -> Result<Vec<String>, game::GameError> {
+    let (paths, minecraft, _, manifest, enabled) = instances::mod_context(&app, &state.snapshot()).await?;
+    let provided = manifest.as_ref().map(|m| m.mods_to_install(&enabled).into_iter().filter_map(|m| m.file.as_ref().map(|f| f.sha512.clone())).collect::<Vec<_>>()).unwrap_or_default();
+    game::personal::install(&game::download::client(), &paths.personal_mods, &project, &minecraft, &provided).await
 }
 
 /// Corps brut : les octets du `.jar` ; en-tête `x-filename` : son nom, encodé pour l'URL.
 #[tauri::command]
-fn add_personal_mod(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<(), game::GameError> {
+fn add_personal_mod(app: AppHandle, state: State<'_, AppState>, request: tauri::ipc::Request<'_>) -> Result<(), game::GameError> {
     let name = request
         .headers()
         .get("x-filename")
@@ -329,36 +456,51 @@ fn add_personal_mod(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<
         .and_then(|encoded| url::form_urlencoded::parse(format!("n={encoded}").as_bytes()).next().map(|(_, name)| name.into_owned()))
         .unwrap_or_default();
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err(game::GameError::NotAMod(name)) };
-    game::personal::add(&game::Paths::new(&app)?.personal_mods, &name, bytes)
+    let instance = instances::resolve(&state.snapshot(), None)?;
+    if instance.kind == instances::Kind::Vanilla { return Err(game::GameError::NotAMod("Vanilla ne charge pas de mods".into())); }
+    game::personal::add(&instances::paths(game::Paths::new(&app)?, &instance)?.personal_mods, &name, bytes)
 }
 
 #[tauri::command]
 fn remove_personal_mod(id: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    game::personal::remove(&game::Paths::new(&app).map_err(|e| e.to_string())?.personal_mods, &id).map_err(|e| e.to_string())?;
-    state.update(|stored| stored.disabled_personal_mods.retain(|name| *name != id))
+    let instance = instances::resolve(&state.snapshot(), None).map_err(|e| e.to_string())?;
+    let paths = instances::paths(game::Paths::new(&app).map_err(|e| e.to_string())?, &instance).map_err(|e| e.to_string())?;
+    game::personal::remove(&paths.personal_mods, &id).map_err(|e| e.to_string())?;
+    state.update(|stored| { if let Some(disabled) = instances::disabled_mut(stored, &instance.id) { disabled.retain(|name| *name != id); } })
 }
 
 #[tauri::command]
 fn set_personal_mod_enabled(id: String, enabled: bool, state: State<'_, AppState>) -> Result<(), String> {
+    let instance = instances::resolve(&state.snapshot(), None).map_err(|e| e.to_string())?;
     state.update(|stored| {
-        stored.disabled_personal_mods.retain(|name| *name != id);
-        if !enabled {
-            stored.disabled_personal_mods.push(id);
+        if let Some(disabled) = instances::disabled_mut(stored, &instance.id) {
+            disabled.retain(|name| *name != id);
+            if !enabled { disabled.push(id); }
         }
     })
+}
+
+/// Dépendances obligatoires des mods ajoutés à la main (`files`), téléchargées depuis Modrinth si ni
+/// « Mes mods » ni la sélection Clover ne les fournissent.
+#[tauri::command]
+async fn install_personal_dependencies(files: Vec<String>, app: AppHandle, state: State<'_, AppState>) -> Result<game::personal::Resolved, game::GameError> {
+    let (paths, minecraft, _, manifest, enabled) = instances::mod_context(&app, &state.snapshot()).await?;
+    let provided = manifest.as_ref().map(|m| m.mods_to_install(&enabled).into_iter().filter_map(|m| m.file.as_ref().map(|f| f.sha512.clone())).collect::<Vec<_>>()).unwrap_or_default();
+    game::personal::install_dependencies(&game::download::client(), &paths.personal_mods, &files, &minecraft, &provided).await
 }
 
 /// Remplace un mod du joueur par sa version pour Minecraft du serveur, trouvée sur Modrinth.
 #[tauri::command]
 async fn update_personal_mod(id: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let paths = game::Paths::new(&app).map_err(|e| e.to_string())?;
-    let manifest = game::catalogue(&app).await.map_err(|e| e.to_string())?;
+    let snapshot = state.snapshot();
+    let instance = instances::resolve(&snapshot, None).map_err(|e| e.to_string())?;
+    let (paths, minecraft, _, _, _) = instances::mod_context(&app, &snapshot).await.map_err(|e| e.to_string())?;
     let http = game::download::client();
-    let new = game::personal::update(&http, &paths.personal_mods, &id, &manifest.minecraft.version).await.map_err(|e| e.to_string())?;
+    let new = game::personal::update(&http, &paths.personal_mods, &id, &minecraft).await.map_err(|e| e.to_string())?;
     // Le nouveau fichier garde l'état activé ou désactivé de l'ancien.
     state.update(|stored| {
-        for name in stored.disabled_personal_mods.iter_mut().filter(|name| **name == id) {
-            name.clone_from(&new);
+        if let Some(disabled) = instances::disabled_mut(stored, &instance.id) {
+            for name in disabled.iter_mut().filter(|name| **name == id) { name.clone_from(&new); }
         }
     })
 }
@@ -389,30 +531,50 @@ async fn play(
     presence: State<'_, Presence>,
     mode: Option<String>,
     server: Option<String>,
+    instance_id: Option<String>,
 ) -> Result<(), game::GameError> {
+    let gate = app.state::<LaunchGate>();
+    let _guard = gate.0.try_lock().map_err(|_| game::GameError::AlreadyRunning)?;
+    if app.state::<game::console::Console>().running() || instances::managed_game_running(&state.root) {
+        return Err(game::GameError::AlreadyRunning);
+    }
     let session = current.0.lock().await.clone().ok_or(game::GameError::NotSignedIn)?;
     let stored = state.snapshot();
+    let instance = instances::resolve(&stored, instance_id.as_deref())?;
     // L'interface ne propose que des serveurs du journal Quick Play : rien d'autre n'est lancé.
     let destination = match server {
         Some(address) if stored.recent_servers.iter().any(|known| known.address == address) => game::Destination::Server(address),
         Some(_) => return Err(game::GameError::UnknownServer),
         None => game::Destination::Mode(mode),
     };
-    let clover = matches!(destination, game::Destination::Mode(_));
+    let clover = instance.kind == instances::Kind::Clover && matches!(destination, game::Destination::Mode(_));
     let settings = stored.settings;
     let options = game::LaunchOptions {
-        memory_mb: (!settings.memory_auto).then(|| u64::from(settings.memory_gb) * 1024),
+        memory_mb: instance.memory_mb.or_else(|| (!settings.memory_auto).then(|| u64::from(settings.memory_gb) * 1024)),
         java_args: settings.java_args.split_whitespace().map(str::to_owned).collect(),
         fullscreen: settings.fullscreen,
-        enabled_mods: settings.enabled_mods.as_ref().map(|mods| mods.iter().cloned().collect()),
-        disabled_personal_mods: stored.disabled_personal_mods,
+        enabled_mods: (if instance.id == instances::BUILTIN { settings.enabled_mods.as_ref() } else { instance.enabled_mods.as_ref() }).map(|mods| mods.iter().cloned().collect()),
+        disabled_personal_mods: if instance.id == instances::BUILTIN { stored.disabled_personal_mods } else { instance.disabled_mods.clone() },
     };
     let handle = app.clone();
-    let on_join = move |server| handle.state::<AppState>().remember_server(server);
-    game::play(&app, &session, options, destination, on_join)
-        .await
+    let on_join = move |server: store::RecentServer| {
+        handle.state::<history::History>().join(&server.address);
+        handle.state::<AppState>().remember_server(server);
+    };
+    let result = if instance.kind == instances::Kind::Clover {
+        game::play(&app, &session, options, destination, on_join, &instance).await
+    } else {
+        instances::play_personal(&app, &session, options, &instance, on_join).await
+    };
+    result
         .inspect(|()| eprintln!("[game] Minecraft lancé"))
         .inspect_err(|e| eprintln!("[game] échec du lancement : {e}"))?;
+    app.state::<history::History>().begin(&instance.id);
+    let _ = state.update(|stored| {
+        stored.last_launched_instance = Some(instance.id.clone());
+        if instance.id == instances::BUILTIN { stored.clover_last_played = Some(instances::now()); }
+        if let Some(entry) = stored.instances.iter_mut().find(|entry| entry.id == instance.id) { entry.last_played = Some(instances::now()); }
+    });
     presence.set_state(presence::State::playing_now(clover)).await;
 
     if let Some(window) = app.get_webview_window("main") {
@@ -446,14 +608,27 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![MINIMIZED_ARG])))
+        // Taille, position et état agrandi retrouvés d'une ouverture à l'autre. Sans `VISIBLE` : la
+        // fenêtre reste cachée au démarrage avec l'ordinateur.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_denylist(&["tray-menu"])
+                .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
+                .build(),
+        )
         .manage(CurrentSession::default())
+        .manage(LaunchGate::default())
+        .manage(history::History::default())
+        .manage(import::Detected::default())
         .manage(Presence::default())
         .manage(update::PendingUpdate::default())
         .setup(|app| {
             let paths = game::Paths::new(app.handle())?;
-            let root = paths.root;
+            let root = paths.root.clone();
             let path = store::path(&root);
             let mut stored = store::Stored::load(&path);
+            let last = instances::resolve(&stored, stored.last_launched_instance.as_deref().or(Some(instances::BUILTIN))).unwrap_or_else(|_| instances::Instance::builtin());
+            let paths = instances::paths(paths, &last)?;
             // Partie jouée launcher fermé : son dernier serveur est resté dans le journal du jeu.
             if let Some(server) = game::quick_play::last_server(&paths.quick_play_log) {
                 if stored.remember_server(server) {
@@ -464,22 +639,52 @@ pub fn run() {
             app.manage(AppState { stored: SyncMutex::new(stored), path, root });
             app.manage(game::console::Console::resume(&paths.game_output));
 
-            // Zone de notification : ouvrir, quitter ; clic sur l'icône = ouvrir.
+            // Navigation and play reuse the main window's actions; left click still opens it.
             let open = MenuItem::with_id(app, "open", "Ouvrir le Clover Launcher", true, None::<&str>)?;
+            let play = MenuItem::with_id(app, "play", "Jouer (instance sélectionnée)", false, None::<&str>)?;
+            let instances = MenuItem::with_id(app, "instances", "Instances", false, None::<&str>)?;
+            let settings = MenuItem::with_id(app, "settings", "Paramètres", false, None::<&str>)?;
+            let separator = PredefinedMenuItem::separator(app)?;
+            let quit_separator = PredefinedMenuItem::separator(app)?;
             let quit = MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &quit])?;
-            let mut tray = TrayIconBuilder::with_id("main").tooltip("Clover Launcher").menu(&menu).show_menu_on_left_click(false);
+            let menu = Menu::with_items(app, &[&open, &separator, &play, &instances, &settings, &quit_separator, &quit])?;
+            app.manage(TrayMenu { _menu: menu.clone(), play, navigation: vec![instances, settings] });
+            #[cfg(windows)]
+            let custom_popup = match tray_popup::create(app.handle()) {
+                Ok(()) => true,
+                Err(error) => {
+                    eprintln!("[tray] menu personnalisé indisponible : {error}");
+                    false
+                }
+            };
+            #[cfg(not(windows))]
+            let custom_popup = false;
+            let mut tray = TrayIconBuilder::with_id("main").tooltip("Clover Launcher").show_menu_on_left_click(false);
+            if !custom_popup {
+                tray = tray.menu(&menu);
+            }
             if let Some(icon) = app.default_window_icon() {
                 tray = tray.icon(icon.clone());
             }
-            tray.on_menu_event(|app, event| match event.id.as_ref() {
-                "open" => show_main_window(app),
-                "quit" => app.exit(0),
-                _ => {}
+            tray.on_menu_event(|app, event| {
+                if let Err(error) = handle_tray_action(app, event.id.as_ref()) {
+                    eprintln!("[tray] action non transmise : {error}");
+                }
             })
-            .on_tray_icon_event(|tray, event| {
-                if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
-                    show_main_window(tray.app_handle());
+            .on_tray_icon_event(move |tray, event| {
+                if let TrayIconEvent::Click { button, button_state: MouseButtonState::Up, position, .. } = event {
+                    match button {
+                        MouseButton::Left => show_main_window(tray.app_handle()),
+                        MouseButton::Right if custom_popup => {
+                            #[cfg(windows)]
+                            if let Err(error) = tray_popup::show(tray.app_handle(), position) {
+                                eprintln!("[tray] menu non ouvert : {error}");
+                            }
+                            #[cfg(not(windows))]
+                            let _ = position;
+                        }
+                        _ => {}
+                    }
                 }
             })
             .build(app)?;
@@ -493,6 +698,8 @@ pub fn run() {
                         if handle.state::<AppState>().snapshot().settings.keep_in_tray {
                             api.prevent_close();
                             let _ = hide_target.hide();
+                        } else {
+                            handle.exit(0);
                         }
                     }
                 });
@@ -504,7 +711,9 @@ pub fn run() {
 
             // Minecraft fermé : retour à « Dans le launcher ».
             let handle = app.handle().clone();
-            app.listen("game-exited", move |_| {
+            app.listen("game-exited", move |event| {
+                let code = serde_json::from_str(event.payload()).unwrap_or(None);
+                handle.state::<history::History>().finish(&handle.state::<AppState>().root, code);
                 let handle = handle.clone();
                 tauri::async_runtime::spawn(async move {
                     handle.state::<Presence>().set_state(presence::State::Launcher).await;
@@ -520,6 +729,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_stored,
+            set_tray_state,
+            tray_state,
+            tray_menu_action,
+            hide_tray_menu,
             restore_session,
             login,
             use_account,
@@ -546,10 +759,28 @@ pub fn run() {
             remove_personal_mod,
             set_personal_mod_enabled,
             update_personal_mod,
+            install_personal_dependencies,
             search_modrinth,
             modrinth_project,
             install_modrinth_mod,
             play,
+            instances::list_instances,
+            instances::install_modpack,
+            install_modrinth_content,
+            instances::instance_content,
+            instances::set_content_enabled,
+            instances::trash_content,
+            history::play_history,
+            instances::instance_versions,
+            instances::fabric_loaders,
+            instances::save_instance,
+            instances::select_instance,
+            instances::set_instances_view,
+            instances::remove_instance,
+            instances::open_instance_folder,
+            instances::set_instance_catalogue,
+            import::detect_installations,
+            import::import_installation,
             check_update,
             install_update,
         ])
