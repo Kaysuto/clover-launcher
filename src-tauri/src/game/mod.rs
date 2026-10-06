@@ -13,6 +13,7 @@ pub mod personal;
 pub mod presets;
 pub mod servers_dat;
 pub mod quick_play;
+pub mod world;
 mod version;
 pub(crate) mod window_title;
 

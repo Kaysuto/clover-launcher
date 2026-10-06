@@ -82,7 +82,8 @@ export const api = {
   selectInstance: (id: string) => invoke<void>("select_instance", { id }),
   setInstancesView: (expert: boolean) => invoke<void>("set_instances_view", { expert }),
   removeInstance: (id: string) => invoke<void>("remove_instance", { id }),
-  openInstanceFolder: (id: string, folder: string) => invoke<void>("open_instance_folder", { id, folder }),
+  /** `world` : dossier d'un monde précis (ou ses datapacks). */
+  openInstanceFolder: (id: string, folder: string, world?: string) => invoke<void>("open_instance_folder", { id, folder, world: world ?? null }),
   setInstanceCatalogue: (mods: string[]) => invoke<void>("set_instance_catalogue", { mods }),
   playHistory: (id: string) => invoke<PlaySession[]>("play_history", { id }),
   /** Les chemins d'image deviennent des adresses du protocole `asset`, seules lisibles par la WebView. */

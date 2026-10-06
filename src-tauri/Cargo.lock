@@ -620,6 +620,7 @@ dependencies = [
  "crc32fast",
  "discord-rich-presence",
  "ed25519-dalek",
+ "flate2",
  "futures-util",
  "hickory-resolver",
  "keyring",

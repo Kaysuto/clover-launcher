@@ -1,4 +1,4 @@
-import { Box, Clover, Database, FolderOpen, Globe, Image as ImageIcon, Play, Search, Server, Settings2, Sun, Trash2, TrendingDown, TrendingUp } from "lucide-react";
+import { Box, Clover, Database, FolderOpen, Globe, Heart, Image as ImageIcon, Play, Search, Server, Settings2, SquareTerminal, Sun, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 
 import { Breadcrumb } from "@/components/Breadcrumb";
@@ -12,7 +12,7 @@ import { KINDS, instanceSummary } from "@/lib/instances";
 import { ACTIVITY_RANGES, type ActivityRange, activity, activityScale, formatDuration, playStats, topServers } from "@/lib/play-history";
 import { cn } from "@/lib/utils";
 import { versionImage } from "@/lib/version-art";
-import type { ContentEntry, ContentFolder, InstanceEntry, ModrinthKind, PlaySession, PlayState } from "@/types";
+import type { ContentEntry, ContentFolder, InstanceEntry, ModrinthKind, PlaySession, PlayState, WorldInfo } from "@/types";
 
 type Services = Pick<typeof api, "playHistory" | "instanceContent" | "setContentEnabled" | "trashContent">;
 
@@ -23,7 +23,8 @@ type Props = {
   onBack: () => void;
   onPlay: () => void;
   onEdit: () => void;
-  onOpenFolder: (folder: "game" | ContentFolder) => void;
+  /** `world` : dossier d'un monde précis. */
+  onOpenFolder: (folder: "game" | ContentFolder, world?: string) => void;
   /** Contenu de l'onglet Mods ; absent pour Vanilla, qui se lance sans mods. */
   mods?: ReactNode;
   /** Change après une installation : l'onglet ouvert relit son dossier. */
@@ -142,7 +143,7 @@ export function InstanceDetail({ entry, play, running, onBack, onPlay, onEdit, o
               entry={entry}
               folder={section}
               services={services}
-              onOpenFolder={() => onOpenFolder(section)}
+              onOpenFolder={(world) => onOpenFolder(section, world)}
               onSearch={onSearch && SEARCH[section] ? () => onSearch(SEARCH[section]!) : undefined}
             />
           )}
@@ -362,6 +363,96 @@ function Activity({ sessions }: { sessions: PlaySession[] }) {
 const SEARCH: Partial<Record<ContentFolder, ModrinthKind>> = { datapacks: "datapack", resourcepacks: "resourcepack", shaderpacks: "shader" };
 const SEARCH_LABEL: Record<string, string> = { datapack: "Ajouter des datapacks", resourcepack: "Rechercher des packs", shader: "Rechercher des shaders" };
 
+const MODES: Record<NonNullable<WorldInfo["mode"]>, string> = { survival: "Survie", creative: "Créatif", adventure: "Aventure", spectator: "Spectateur" };
+const DIFFICULTIES: Record<NonNullable<WorldInfo["difficulty"]>, string> = { peaceful: "Paisible", easy: "Facile", normal: "Normale", hard: "Difficile" };
+const relativeFormat = new Intl.RelativeTimeFormat("fr-FR", { numeric: "auto" });
+
+/** Nom donné en jeu, sinon celui du dossier. */
+const worldName = (world: ContentEntry) => world.level?.name ?? world.name;
+
+/** « Joué aujourd'hui », « Joué il y a 3 jours », puis la date. */
+function playedAgo(seconds: number | null): string {
+  if (!seconds) return "Jamais joué";
+  const day = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const days = Math.round((day(new Date()) - day(new Date(seconds * 1000))) / 86_400_000);
+  return days < 7 ? `Joué ${relativeFormat.format(-days, "day")}` : `Joué le ${dateFormat.format(new Date(seconds * 1000))}`;
+}
+
+/** Monde : miniature, nom donné en jeu, mode et difficulté, version, puis dernière partie et taille. */
+function WorldCard({ world, minecraft, onOpenFolder, trashButton }: { world: ContentEntry; minecraft: string | null; onOpenFolder: () => void; trashButton: ReactNode }) {
+  const level = world.level;
+  const name = worldName(world);
+  // Un monde rouvert dans une autre version est converti par le jeu : mieux vaut le savoir avant.
+  const otherVersion = level?.version && minecraft && level.version !== minecraft;
+  const chip = "flex items-center gap-1 rounded-md border border-border bg-[#100e0b] px-1.5 py-0.5 text-[11px] text-muted-foreground";
+  return (
+    <li className={cn(card, "flex overflow-hidden transition-colors hover:border-[#4a4237]")}>
+      {world.image ? (
+        <img src={world.image} alt="" className="size-[104px] shrink-0 border-r border-border object-cover [image-rendering:pixelated]" />
+      ) : (
+        <span className="grid size-[104px] shrink-0 place-items-center border-r border-border bg-gradient-to-b from-[#2b3a2a] to-[#1b2418] text-primary/70">
+          <Globe className="size-8" aria-hidden />
+        </span>
+      )}
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5 px-3.5 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={name === world.name ? name : `${name} (dossier « ${world.name} »)`}>
+            {name}
+          </span>
+          {level?.version && (
+            <span
+              title={otherVersion ? `Dernière partie en ${level.version} : l'ouvrir en ${minecraft} le convertit.` : `Dernière partie en ${level.version}`}
+              className={cn("shrink-0 rounded-md px-1.5 py-0.5 font-pixel text-[10px]", otherVersion ? "bg-accent/15 text-accent" : "bg-[#100e0b] text-muted-foreground")}
+            >
+              {level.version}
+            </span>
+          )}
+        </div>
+        {level && (
+          <p className="flex flex-wrap items-center gap-1.5">
+            {level.mode && <span className={chip}>{MODES[level.mode]}</span>}
+            {level.hardcore ? (
+              <span className={cn(chip, "border-destructive/40 text-destructive")}>
+                <Heart className="size-3 fill-current" aria-hidden />
+                Hardcore
+              </span>
+            ) : (
+              level.difficulty && <span className={chip}>{DIFFICULTIES[level.difficulty]}</span>
+            )}
+            {level.commands && (
+              <span className={chip}>
+                <SquareTerminal className="size-3" aria-hidden />
+                Commandes
+              </span>
+            )}
+            {level.datapacks > 0 && (
+              <span className={chip}>
+                <Database className="size-3" aria-hidden />
+                {level.datapacks} datapack{level.datapacks > 1 ? "s" : ""}
+              </span>
+            )}
+          </p>
+        )}
+        <div className="mt-auto flex items-center gap-1">
+          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+            {playedAgo(world.modified)} · {formatSize(world.size)}
+          </span>
+          <button
+            type="button"
+            onClick={onOpenFolder}
+            aria-label={`Ouvrir le dossier de ${name}`}
+            title="Ouvrir le dossier"
+            className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <FolderOpen className="size-4" aria-hidden />
+          </button>
+          {trashButton}
+        </div>
+      </div>
+    </li>
+  );
+}
+
 const EMPTY: Record<ContentFolder, string> = {
   saves: "Aucun monde : crée-en un en jeu, il apparaîtra ici.",
   datapacks: "Aucun datapack : ajoute-en un à l'un de tes mondes.",
@@ -370,7 +461,7 @@ const EMPTY: Record<ContentFolder, string> = {
   screenshots: "Aucune capture : appuie sur F2 en jeu.",
 };
 
-function Content({ entry, folder, services, onOpenFolder, onSearch }: { entry: InstanceEntry; folder: ContentFolder; services: Services; onOpenFolder: () => void; onSearch?: () => void }) {
+function Content({ entry, folder, services, onOpenFolder, onSearch }: { entry: InstanceEntry; folder: ContentFolder; services: Services; onOpenFolder: (world?: string) => void; onSearch?: () => void }) {
   const [list, setList] = useState<ContentEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viewing, setViewing] = useState<ContentEntry | null>(null);
@@ -416,10 +507,10 @@ function Content({ entry, folder, services, onOpenFolder, onSearch }: { entry: I
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
         <p className="min-w-0 flex-1 text-[13px] text-muted-foreground">
-          {list ? `${list.length} élément${list.length > 1 ? "s" : ""} · ${formatSize(total)}` : error ? "" : "Chargement…"}
+          {list ? `${list.length} ${folder === "saves" ? "monde" : "élément"}${list.length > 1 ? "s" : ""} · ${formatSize(total)}` : error ? "" : "Chargement…"}
           {shared && " · dossier commun aux instances qui le partagent"}
         </p>
-        <button type="button" onClick={onOpenFolder} className={secondaryButton}>
+        <button type="button" onClick={() => onOpenFolder()} className={secondaryButton}>
           <FolderOpen className="size-4" aria-hidden />
           Ouvrir le dossier
         </button>
@@ -435,23 +526,15 @@ function Content({ entry, folder, services, onOpenFolder, onSearch }: { entry: I
       {list?.length === 0 && <p className={cn(card, "py-12 text-center text-sm text-muted-foreground")}>{EMPTY[folder]}</p>}
 
       {list && folder === "saves" && (
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
+        <ul className="grid grid-cols-[repeat(auto-fill,minmax(340px,1fr))] gap-3">
           {list.map((world) => (
-            <li key={world.name} className={cn(card, "flex items-center gap-3 p-3")}>
-              {world.image ? (
-                <img src={world.image} alt="" className="size-14 shrink-0 rounded-md [image-rendering:pixelated]" />
-              ) : (
-                <span className="grid size-14 shrink-0 place-items-center rounded-md bg-[#100e0b] text-muted-foreground">
-                  <Globe className="size-6" aria-hidden />
-                </span>
-              )}
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="truncate text-[13px] font-semibold">{world.name}</span>
-                <span className="text-[11px] text-muted-foreground">{world.modified ? `Joué le ${dateFormat.format(new Date(world.modified * 1000))}` : "Jamais joué"}</span>
-                <span className="text-[11px] text-muted-foreground">{formatSize(world.size)}</span>
-              </span>
-              {trashButton(world, `le monde ${world.name}`, () => setTrashing(world))}
-            </li>
+            <WorldCard
+              key={world.name}
+              world={world}
+              minecraft={entry.minecraft}
+              onOpenFolder={() => onOpenFolder(world.name)}
+              trashButton={trashButton(world, `le monde ${worldName(world)}`, () => setTrashing(world))}
+            />
           ))}
         </ul>
       )}
@@ -516,7 +599,7 @@ function Content({ entry, folder, services, onOpenFolder, onSearch }: { entry: I
       <Dialog open={trashing !== null} onOpenChange={(open) => !open && setTrashing(null)}>
         <DialogContent className="mc-frame gap-5 border-[var(--mc-outline)] bg-card p-6 ring-0 sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle className="font-display text-2xl font-normal">Supprimer « {trashing?.name} » ?</DialogTitle>
+            <DialogTitle className="font-display text-2xl font-normal">Supprimer « {trashing && worldName(trashing)} » ?</DialogTitle>
             <DialogDescription className="text-[13px] leading-relaxed">
               Le monde part à la corbeille de l'ordinateur : tu peux encore l'en sortir tant qu'elle n'est pas vidée.
               {shared && " Il disparaît aussi des instances qui partagent ce dossier."}

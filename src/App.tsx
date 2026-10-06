@@ -1034,7 +1034,7 @@ export default function App() {
               onPlay={(id) => { setLastLaunched(id); startGame(() => selectInstance(id).then(() => api.playInstance(id)).then(refreshInstances)); }}
               onCreate={(minecraft) => setInstanceDraft(newInstance(minecraft))}
               onEdit={editInstance}
-              onOpenFolder={(id, folder) => api.openInstanceFolder(id, folder).catch((reason) => setNotice(String(reason)))}
+              onOpenFolder={(id, folder, world) => api.openInstanceFolder(id, folder, world).catch((reason) => setNotice(String(reason)))}
               mods={modsScreen(true)}
               contentRevision={contentRevision}
               onSearch={setSearchKind}

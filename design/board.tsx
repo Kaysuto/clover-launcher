@@ -691,7 +691,17 @@ const boardServices = {
   instanceContent: async (_id: string, folder: ContentFolder): Promise<ContentEntry[]> => {
     const entry = (name: string, size: number, modified: number, more: Partial<ContentEntry> = {}): ContentEntry => ({ name, title: null, icon: null, world: null, enabled: true, size, modified, image: null, ...more });
     return {
-      saves: [entry("Base de printemps", 184_000_000, 1790600000, { image: versionImage("1.21") }), entry("Skyblock", 12_400_000, 1789000000)],
+      saves: [
+        entry("Nouveau monde", 23_600_000, Math.floor(Date.now() / 1000) - 3600, {
+          image: versionImage("26.2"),
+          level: { name: "Base de printemps", mode: "survival", hardcore: false, difficulty: "normal", commands: false, version: "26.2", lastPlayed: null, datapacks: 2 },
+        }),
+        entry("Hardcore", 412_000_000, Math.floor(Date.now() / 1000) - 3 * 86_400, {
+          image: versionImage("1.21"),
+          level: { name: "Hardcore saison 2", mode: "survival", hardcore: true, difficulty: "hard", commands: false, version: "1.21.11", lastPlayed: null, datapacks: 0 },
+        }),
+        entry("Skyblock", 12_400_000, 1789000000, { level: { name: null, mode: "creative", hardcore: false, difficulty: "peaceful", commands: true, version: "26.2", lastPlayed: null, datapacks: 0 } }),
+      ],
       datapacks: [
         entry("Terralith_1.21.5_v2.5.8.zip", 1_200_000, 1790500000, { title: "Terralith", icon: "https://cdn.modrinth.com/data/8oi3bsk5/icon.png", world: "Base de printemps" }),
         entry("mon-datapack", 24_000, 1789500000, { world: "Skyblock", enabled: false }),
@@ -748,7 +758,7 @@ function InstancesBoard({ creating, expert: initialExpert = false, running = nul
   );
 }
 
-function InstanceDetailBoard({ running = false, section }: { running?: boolean; section?: "mods" | "resourcepacks" | "datapacks" }) {
+function InstanceDetailBoard({ running = false, section }: { running?: boolean; section?: "mods" | "resourcepacks" | "datapacks" | "saves" }) {
   return (
     <Window tab="instances">
       <InstanceDetail
@@ -771,6 +781,7 @@ function InstanceDetailBoard({ running = false, section }: { running?: boolean; 
 const SCREENS: Record<string, { label: string; render: () => ReactNode }> = {
   "instance-detail": { label: "Instance — page détaillée", render: () => <InstanceDetailBoard /> },
   "instance-mods": { label: "Instance — onglet Mods", render: () => <InstanceDetailBoard section="mods" /> },
+  "instance-worlds": { label: "Instance — onglet Mondes", render: () => <InstanceDetailBoard section="saves" /> },
   "instance-packs": { label: "Instance — packs de ressources", render: () => <InstanceDetailBoard section="resourcepacks" /> },
   "instance-datapacks": { label: "Instance — datapacks", render: () => <InstanceDetailBoard section="datapacks" /> },
   instances: { label: "Instances — Simple", render: () => <InstancesBoard /> },

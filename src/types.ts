@@ -77,6 +77,20 @@ export type ContentFolder = "saves" | "datapacks" | "resourcepacks" | "shaderpac
  * Élément d'un onglet d'instance. Pour un pack (ressources, shader, datapack) : `title` et `icon` du
  * projet Modrinth s'il y est publié, sinon logo `pack.png` du pack ; `world` : monde d'un datapack.
  */
+/** Fiche d'un monde, lue dans son `level.dat`. */
+export type WorldInfo = {
+  /** Nom donné en jeu, qui peut différer de celui du dossier. */
+  name: string | null;
+  mode: "survival" | "creative" | "adventure" | "spectator" | null;
+  hardcore: boolean;
+  difficulty: "peaceful" | "easy" | "normal" | "hard" | null;
+  commands: boolean;
+  /** Version du jeu de la dernière partie. */
+  version: string | null;
+  lastPlayed: number | null;
+  datapacks: number;
+};
+
 export type ContentEntry = {
   name: string;
   title: string | null;
@@ -87,6 +101,8 @@ export type ContentEntry = {
   size: number;
   modified: number | null;
   image: string | null;
+  /** Mondes seulement. */
+  level?: WorldInfo | null;
 };
 
 /** Version du launcher plus récente sur le CDN (updater Tauri). */

@@ -28,7 +28,7 @@ type Props = {
   onCreate: (minecraft?: string) => void;
   /** L'instance Clover intégrée se règle dans les paramètres du launcher. */
   onEdit: (entry: InstanceEntry) => void;
-  onOpenFolder: (id: string, folder: "game" | ContentFolder) => void;
+  onOpenFolder: (id: string, folder: "game" | ContentFolder, world?: string) => void;
   onRemove: (id: string) => void;
   /** Onglet Mods de la page de l'instance choisie (les mods suivent l'instance choisie). */
   mods?: ReactNode;
@@ -66,7 +66,7 @@ export function InstancesScreen(props: Props) {
         onBack={() => setOpened(null)}
         onPlay={() => props.onPlay(page.id)}
         onEdit={() => props.onEdit(page)}
-        onOpenFolder={(folder) => props.onOpenFolder(page.id, folder)}
+        onOpenFolder={(folder, world) => props.onOpenFolder(page.id, folder, world)}
         mods={page.kind === "vanilla" || page.id !== selected ? undefined : props.mods}
         contentRevision={props.contentRevision}
         onSearch={props.onSearch}

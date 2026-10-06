@@ -406,6 +406,7 @@ pub fn remove_instance(id: String, state: State<'_, AppState>) -> Result<(), Str
 pub fn open_instance_folder(
     id: String,
     folder: String,
+    world: Option<String>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -416,9 +417,16 @@ pub fn open_instance_folder(
         "game" => paths.game,
         "mods" => paths.personal_mods,
         "logs" => paths.logs,
-        "saves" | "resourcepacks" | "shaderpacks" | "screenshots" => paths.game.join(folder),
+        "saves" | "resourcepacks" | "shaderpacks" | "screenshots" => paths.game.join(&folder),
         // Les datapacks sont rangés dans chaque monde.
         "datapacks" => paths.game.join("saves"),
+        _ => return Err("Dossier inconnu.".into()),
+    };
+    // Dossier d'un monde précis (`saves/<monde>`, ou ses `datapacks/`).
+    let path = match (folder.as_str(), world) {
+        ("saves", Some(world)) => game::content::world_dir(&path, &world).map_err(|e| e.to_string())?,
+        ("datapacks", Some(world)) => game::content::world_dir(&path, &world).map_err(|e| e.to_string())?.join("datapacks"),
+        (_, None) => path,
         _ => return Err("Dossier inconnu.".into()),
     };
     std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
@@ -445,6 +453,8 @@ pub struct ContentEntry {
     pub modified: Option<u64>,
     /// Chemin de l'image (icône du monde, capture), ouverte à l'interface par le protocole `asset`.
     pub image: Option<String>,
+    /// Fiche d'un monde (mode, difficulté, version…), lue dans son `level.dat`.
+    pub level: Option<game::world::WorldInfo>,
     /// Empreinte de l'archive d'un pack, pour Modrinth.
     #[serde(skip)]
     sha512: Option<String>,
@@ -501,6 +511,7 @@ fn content(dir: &std::path::Path, folder: &str, world: Option<&str>, enabled: bo
             };
             let packs = matches!(folder, "resourcepacks" | "shaderpacks" | "datapacks");
             let stamp = if folder == "saves" { path.join("level.dat") } else { path.clone() };
+            let level = (folder == "saves").then(|| game::world::read(&path)).flatten();
             Some(ContentEntry {
                 name,
                 title: None,
@@ -508,8 +519,10 @@ fn content(dir: &std::path::Path, folder: &str, world: Option<&str>, enabled: bo
                 world: world.map(str::to_owned),
                 enabled,
                 size: size(&path),
-                modified: modified(&stamp),
+                // Dernière partie notée par le jeu : une copie du dossier ne la change pas.
+                modified: level.as_ref().and_then(|level| level.last_played).or_else(|| modified(&stamp)),
                 image: image.map(|image| image.to_string_lossy().into_owned()),
+                level,
                 sha512: packs.then(|| game::content::archive_hash(&path)).flatten(),
             })
         })
