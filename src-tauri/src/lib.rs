@@ -1,4 +1,5 @@
 mod auth;
+mod crash;
 mod game;
 mod history;
 mod import;
@@ -230,6 +231,7 @@ async fn remove_account(uuid: String, state: State<'_, AppState>, current: State
 #[tauri::command]
 async fn save_settings(settings: store::Settings, app: AppHandle, state: State<'_, AppState>, presence: State<'_, Presence>) -> Result<(), String> {
     let previous = state.update(|stored| std::mem::replace(&mut stored.settings, settings.clone()))?;
+    crash::set(settings.crash_reports, settings.beta_channel);
     if previous.discord_presence != settings.discord_presence {
         presence.set_enabled(settings.discord_presence).await;
     }
@@ -304,6 +306,8 @@ struct SystemInfo {
     tray: bool,
     /// Profil de la machine et niveau des réglages recommandés.
     machine: &'static machine::Profile,
+    /// DSN et version pour les rapports de plantage de l'interface (avec l'accord du joueur).
+    crash: crash::Reporting,
 }
 
 #[tauri::command]
@@ -317,6 +321,7 @@ fn system_info(app: AppHandle) -> Result<SystemInfo, String> {
         store: msix::packaged(),
         tray: tray_supported(),
         machine: machine::profile(),
+        crash: crash::reporting(),
     })
 }
 
@@ -691,6 +696,9 @@ fn show_main_window(app: &AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Rapports de plantage : client prêt dès le départ, muet tant que les réglages (lus dans
+    // `setup`) ne donnent pas l'accord du joueur.
+    let _crash_reports = crash::init();
     tauri::Builder::default()
         // En premier : une seconde instance réaffiche la fenêtre existante puis se ferme.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main_window(app)))
@@ -728,6 +736,7 @@ pub fn run() {
                 }
             }
             let discord = stored.settings.discord_presence;
+            crash::set(stored.settings.crash_reports, stored.settings.beta_channel);
             app.manage(AppState { stored: SyncMutex::new(stored), path, root });
             app.manage(game::console::Console::resume(&paths.game_output));
 

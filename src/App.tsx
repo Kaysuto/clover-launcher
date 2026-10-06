@@ -11,6 +11,7 @@ import { TitleBar } from "@/components/TitleBar";
 import { type UpdateState, UpdateToast } from "@/components/UpdateToast";
 import { VoteTicker } from "@/components/VoteTicker";
 import { api, type Catalogue, type MachineLevel, type ServerStatus, type SiteFeed, type SkinEntry, type Stored, type StorageUsage, type SystemInfo } from "@/lib/api";
+import { setCrashReports } from "@/lib/crash-reports";
 import { formatLog } from "@/lib/log";
 import { networkPlayers } from "@/lib/site";
 import { ConsoleScreen } from "@/screens/ConsoleScreen";
@@ -341,6 +342,11 @@ export default function App() {
     getCurrentWebview().setZoom(settings.scale / 100).catch(() => {});
     document.documentElement.classList.toggle("reduce-motion", settings.animations === "reduced");
   }, [settings?.scale, settings?.animations]);
+
+  // ── Rapports de plantage de l'interface : démarrés ou arrêtés selon l'accord du joueur ──
+  useEffect(() => {
+    if (settings && system) setCrashReports(settings.crashReports, system.crash, settings.betaChannel);
+  }, [settings?.crashReports, settings?.betaChannel, system]);
 
   // ── Mise à jour du launcher : vérifiée au démarrage puis toutes les 6 h (le launcher peut rester des
   // jours dans la zone de notification), installée d'office si le réglage le demande et sans partie ──

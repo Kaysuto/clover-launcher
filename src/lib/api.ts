@@ -63,7 +63,17 @@ export type SiteFeed = {
 export type MachineLevel = "modest" | "standard" | "powerful";
 export type MachineProfile = { memoryMb: number; cores: number; gpu: { name: string; vramMb: number | null } | null; level: MachineLevel };
 /** `tray` : icône de zone de notification visible (GNOME sans l'extension AppIndicator : non). */
-export type SystemInfo = { totalMemoryGb: number; autoMemoryGb: number; java: string | null; launcher: string; store: boolean; tray: boolean; machine: MachineProfile };
+/** `crash` : DSN et version pour les rapports de plantage de l'interface (avec l'accord du joueur). */
+export type SystemInfo = {
+  totalMemoryGb: number;
+  autoMemoryGb: number;
+  java: string | null;
+  launcher: string;
+  store: boolean;
+  tray: boolean;
+  machine: MachineProfile;
+  crash: { dsn: string; release: string; environment: string };
+};
 export type StorageUsage = { parts: { id: string; label: string; bytes: number }[]; reclaimable: number; gameDir: string };
 export type SkinEntry = { id: string; name: string; model: SkinModel; texture: string };
 export type TrayState = { available: boolean; canPlay: boolean };

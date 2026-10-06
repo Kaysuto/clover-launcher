@@ -602,7 +602,7 @@ export function OnboardingDone({ steps = ALL_STEPS, accounts, imports, machine, 
           <Switch id="onboarding-crash" checked={crashReports} onCheckedChange={onCrashReports} className="mt-0.5" />
           <label htmlFor="onboarding-crash" className="flex flex-col gap-0.5 text-sm">
             <span className="font-semibold">Envoyer les rapports de plantage à l'équipe Clover Games</span>
-            <span className="text-xs leading-snug text-muted-foreground">Version du launcher, système et message d'erreur. Jamais ton mot de passe ni tes jetons de connexion.</span>
+            <span className="text-xs leading-snug text-muted-foreground">Version du launcher, système, message d'erreur et dernières actions dans le launcher. Jamais ton mot de passe, tes jetons de connexion ni ton nom d'utilisateur.</span>
           </label>
         </div>
       </div>

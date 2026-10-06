@@ -47,6 +47,7 @@ crc32fast = "1.5"
 trash = { version = "5", default-features = false, features = ["coinit_apartmentthreaded"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
+sentry = { version = "0.49", default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls"] }
 
 
 # Paquet MSIX du Microsoft Store : détection et tâche de démarrage (msix.rs).

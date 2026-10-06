@@ -281,3 +281,8 @@
 - `install::download_size` (client, bibliothèques et natives absentes, `totalSize` de l'index d'assets s'il manque, runtime Java manquant d'après le manifeste des runtimes Mojang ; rien d'écrit sur le disque), commande `download_size`, affichage dans le panneau de création d'instance (« Environ 825 Mo à télécharger au premier lancement », « Déjà téléchargée »).
 - Vérifié en réel : 1.20.1 sur un poste neuf → 825 Mo, dossier de test non créé ; 26.2 installée → 0. Fabric non compté (chargeur et quelques bibliothèques sans taille publiée).
 - Reste de CLO-286 : catalogue Clover pour d'autres versions que celle du serveur (`alsoSupported`), non commencé.
+
+### CLO-274 — Sentry
+- Fait dans un worktree (`../launcher-sentry`, branche `kaysuto/clo-274-sentry`) : une autre session modifiait le dépôt principal sans commit. `crash.rs` (client au démarrage, filtre d'accord, nettoyage du nom de machine et du dossier personnel, étiquette de canal), `src/lib/crash-reports.ts` (`@sentry/react` 11 démarré ou fermé selon l'accord, `BrowserSession` retiré, `dataCollection` coupé), erreurs de rendu React par `reactErrorHandler`. Texte du consentement précisé (dernières actions, jamais le nom d'utilisateur).
+- Vérifié : tests Rust (rien sans accord, nettoyage), test Node du nettoyage des chemins, clippy `-D warnings`, `tsc`. Envoi réel au projet : rapport Rust `a8950077-b9a6-485e-b6aa-e212bf242192` (file vidée), rapport de l'interface `90a46558d27b4a6b9a3f5bbcd6e158e3` accepté par Sentry (HTTP 200) depuis une page de test dans Edge sans interface, supprimée ensuite.
+- Point de terminaison OTLP fourni par Kaysuto non utilisé : traces de performance hors du consentement « rapports de plantage ».
