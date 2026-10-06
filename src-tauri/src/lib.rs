@@ -9,6 +9,7 @@ mod presence;
 mod site;
 mod skins;
 mod status;
+mod steam;
 mod storage;
 mod store;
 mod update;
@@ -832,6 +833,9 @@ pub fn run() {
             finish_onboarding,
             note_server_version,
             reset_recommended,
+            steam::steam_status,
+            steam::steam_add,
+            steam::steam_remove,
             get_catalogue,
             server_status,
             site_feed,

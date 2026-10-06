@@ -23,6 +23,17 @@ pub fn packaged() -> bool {
     false
 }
 
+/// Identifiant d'application du paquet (`<famille>!CloverLauncher`), pour le lancer par son alias
+/// (`shell:AppsFolder\…`) : son exécutable est dans un dossier protégé.
+#[cfg(windows)]
+pub fn app_user_model_id() -> Option<String> {
+    if !packaged() {
+        return None;
+    }
+    let family = windows::ApplicationModel::Package::Current().and_then(|package| package.Id()).and_then(|id| id.FamilyName()).ok()?;
+    Some(format!("{family}!CloverLauncher"))
+}
+
 /// Lancé par la tâche de démarrage du paquet : l'équivalent de `--minimized` hors paquet.
 pub fn started_by_startup_task() -> bool {
     #[cfg(windows)]

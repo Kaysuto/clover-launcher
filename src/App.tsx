@@ -22,13 +22,13 @@ import { InstancesScreen } from "@/screens/InstancesScreen";
 import { ModrinthDialog } from "@/screens/ModrinthDialog";
 import { ModsScreen, type ModsView } from "@/screens/ModsScreen";
 import { DEFAULT_IMPORT, OnboardingAccounts, OnboardingDone, OnboardingImport, type LoginState } from "@/screens/OnboardingScreen";
-import { type Account, type Settings, SettingsScreen, type SettingsTab, type HiddenSetting, settingsTabLabel } from "@/screens/SettingsScreen";
+import { type Account, type Settings, SettingsScreen, type SettingsTab, type HiddenSetting, type SteamState, settingsTabLabel } from "@/screens/SettingsScreen";
 import { SkinEditorDialog } from "@/screens/SkinEditorDialog";
 import { SkinsScreen } from "@/screens/SkinsScreen";
 import type { Cape, ConsoleSnapshot, DetectedInstance, ImportItem, ImportResult, ImportScan, InstanceEntry, InstanceInput, ModInfo, ModrinthKind, PersonalMod, PlayState, Profile, Progress, SavedSkin, SkinLook, Tab } from "@/types";
 
 /** Fonctions dont la ligne de réglage reste masquée tant qu'elles ne sont pas branchées. */
-const UPCOMING: HiddenSetting[] = ["desktopNotifications", "steam", "changeGameDir"];
+const UPCOMING: HiddenSetting[] = ["desktopNotifications", "changeGameDir"];
 /** Paquet du Microsoft Store : le Store gère les mises à jour du launcher. */
 const STORE_HIDDEN: HiddenSetting[] = ["autoUpdate"];
 
@@ -400,6 +400,16 @@ export default function App() {
 
   useEffect(() => {
     if (tab === "settings" && settingsTab === "storage") api.storageUsage().then(setStorage).catch(() => {});
+  }, [tab, settingsTab]);
+
+  // Steam : état relu toutes les 3 s sur l'onglet Intégrations, le joueur doit souvent le fermer.
+  const [steam, setSteam] = useState<SteamState>("absent");
+  useEffect(() => {
+    if (tab !== "settings" || settingsTab !== "integrations") return;
+    const refresh = () => api.steamStatus().then(setSteam).catch(() => {});
+    refresh();
+    const timer = window.setInterval(refresh, 3_000);
+    return () => window.clearInterval(timer);
   }, [tab, settingsTab]);
 
   const refreshPersonalMods = useCallback(() => {
@@ -1008,7 +1018,11 @@ export default function App() {
                 await api.cleanStorage();
                 setStorage(await api.storageUsage());
               }}
-              steam={{ state: "absent", onAdd: () => {}, onRemove: () => {} }}
+              steam={{
+                state: steam,
+                onAdd: () => api.steamAdd().then(setSteam).catch((reason) => setNotice(String(reason))),
+                onRemove: () => api.steamRemove().then(setSteam).catch((reason) => setNotice(String(reason))),
+              }}
               isStaff={isBetaTester(catalogue, profile?.uuid) || settings.betaChannel}
               about={{ launcher: system?.launcher ?? "", minecraft: catalogue?.minecraft.version ?? "", fabric: catalogue?.fabric.loader ?? "" }}
               onOpenLink={open}

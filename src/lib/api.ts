@@ -5,7 +5,7 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type { Instance, InstanceEntry, InstanceInput, AvailableVersion, ContentEntry, ContentFolder, PlaySession } from "@/types";
 
-import type { Settings } from "@/screens/SettingsScreen";
+import type { Settings, SteamState } from "@/screens/SettingsScreen";
 import type { RecentVote } from "@/components/VoteTicker";
 import type { ConsoleSnapshot, DetectedInstance, ImportItem, ImportResult, LauncherUpdate, ModCategory, ModrinthKind, ModrinthPage, ModrinthProject, NewsItem, PersonalMod, Profile, RecentServer, SkinModel } from "@/types";
 
@@ -100,6 +100,10 @@ export const api = {
   removeAccount: (uuid: string) => invoke<Profile | null>("remove_account", { uuid }),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   finishOnboarding: () => invoke<void>("finish_onboarding"),
+  /** Raccourci « Clover Games » dans la bibliothèque Steam (CLO-285). */
+  steamStatus: () => invoke<SteamState>("steam_status"),
+  steamAdd: () => invoke<SteamState>("steam_add"),
+  steamRemove: () => invoke<SteamState>("steam_remove"),
   /** Réglages recommandés pour la machine, dans l'instance Clover Games ; fichiers écrits. */
   resetRecommended: () => invoke<string[]>("reset_recommended"),
   /** Retient la version de Minecraft du serveur ; l'ancienne si elle vient de changer. */

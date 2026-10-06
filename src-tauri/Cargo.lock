@@ -617,6 +617,7 @@ version = "0.3.0"
 dependencies = [
  "ammonia",
  "base64 0.23.1",
+ "crc32fast",
  "discord-rich-presence",
  "ed25519-dalek",
  "futures-util",
