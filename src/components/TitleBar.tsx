@@ -1,7 +1,7 @@
 import { Copy, Minus, Settings, Square, X } from "lucide-react";
 import type { ReactNode } from "react";
 
-import monogram from "@/assets/brand/monogram.webp";
+import launcherLogo from "@/assets/brand/launcher.png";
 import { cn } from "@/lib/utils";
 import type { Tab } from "@/types";
 
@@ -30,8 +30,8 @@ const windowButton =
  */
 export function TitleBar({ session, account, activity, notifications, maximized, onMinimize, onToggleMaximize, onClose }: Props) {
   return (
-    <header data-tauri-drag-region className="flex h-13 shrink-0 items-center gap-6 border-b border-border bg-[#100e0b] pl-[23px]">
-      <img src={monogram} alt="Clover Games" width={30} height={30} data-tauri-drag-region />
+    <header data-tauri-drag-region className="flex h-13 shrink-0 items-center gap-6 border-b border-border bg-[#100e0b] pl-5">
+      <img src={launcherLogo} alt="Clover Launcher" width={36} height={36} className="pixelated" data-tauri-drag-region />
 
       <div data-tauri-drag-region className="h-full flex-1" />
 

@@ -1,0 +1,57 @@
+[
+  {
+    "file": "01-classic.png",
+    "width": 1254,
+    "height": 1254,
+    "bytes": 650966,
+    "alpha": [
+      0,
+      255
+    ],
+    "transparent": true
+  },
+  {
+    "file": "02-block.png",
+    "width": 1254,
+    "height": 1254,
+    "bytes": 753050,
+    "alpha": [
+      0,
+      255
+    ],
+    "transparent": true
+  },
+  {
+    "file": "03-geometric.png",
+    "width": 1254,
+    "height": 1254,
+    "bytes": 892830,
+    "alpha": [
+      255,
+      255
+    ],
+    "transparent": false
+  },
+  {
+    "file": "04-retro.png",
+    "width": 1254,
+    "height": 1254,
+    "bytes": 711142,
+    "alpha": [
+      0,
+      255
+    ],
+    "transparent": true
+  },
+  {
+    "file": "05-classic-block-fusion.png",
+    "width": 1254,
+    "height": 1254,
+    "bytes": 655723,
+    "alpha": [
+      0,
+      255
+    ],
+    "transparent": true
+  }
+]
