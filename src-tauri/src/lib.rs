@@ -6,6 +6,7 @@ mod instances;
 mod location;
 mod machine;
 mod msix;
+mod notifications;
 mod presence;
 mod site;
 mod skins;
@@ -695,6 +696,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main_window(app)))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![MINIMIZED_ARG])))
         // Taille, position et état agrandi retrouvés d'une ouverture à l'autre. Sans `VISIBLE` : la
@@ -710,6 +712,7 @@ pub fn run() {
         .manage(history::History::default())
         .manage(import::Detected::default())
         .manage(Presence::default())
+        .manage(notifications::SiteTokens::default())
         .manage(update::PendingUpdate::default())
         .setup(|app| {
             let paths = game::Paths::new(app.handle())?;
@@ -835,6 +838,9 @@ pub fn run() {
             finish_onboarding,
             note_server_version,
             reset_recommended,
+            notifications::notifications,
+            notifications::mark_notifications_read,
+            notifications::system_notification,
             location::pick_game_dir,
             location::move_game_dir,
             steam::steam_status,

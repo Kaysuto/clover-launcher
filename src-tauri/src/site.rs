@@ -66,9 +66,14 @@ struct VotesResponse {
     votes: Vec<RecentVote>,
 }
 
+/// Adresse du site (clovergames.fr, ou `CLOVER_SITE_URL` en développement).
+pub fn base() -> String {
+    std::env::var(SITE_OVERRIDE_ENV).unwrap_or_else(|_| SITE_URL.to_owned())
+}
+
 pub async fn feed() -> Feed {
     let http = download::client();
-    let site = std::env::var(SITE_OVERRIDE_ENV).unwrap_or_else(|_| SITE_URL.to_owned());
+    let site = base();
     let (news, modes, votes) = tokio::join!(
         get::<NewsResponse>(&http, &site, "news"),
         get::<StatusResponse>(&http, &site, "status"),

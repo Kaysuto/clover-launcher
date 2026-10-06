@@ -270,3 +270,9 @@
 ### CLO-274 / CLO-285 — changer le dossier du jeu
 - `location.rs` (`pick_game_dir` par `tauri-plugin-dialog`, `move_game_dir`), `Paths::new` lit l'emplacement choisi. Interface : bouton « Changer… » réaffiché, barre de progression, redémarrage.
 - Vérifié : tests (dossiers synchronisés, dans l'actuel, relatif, non vide → « Clover Launcher », déplacement complet avec progression), clippy `-D warnings`, `tsc`. Pas de déplacement réel du dossier de Kaysuto.
+
+### CLO-283 — notifications (site et launcher) ; CLO-276 — page du site
+- Site (branche `kaysuto/clo-276-site-page-de-telechargement-launcher`, non poussée) : `ef94e16` lien wiki et entrée « Launcher » dans la navigation par défaut (la navigation réelle vient du tableau de bord) ; `4cabab7` session du launcher (`serverId`, `hasJoined`, jeton signé), `/api/launcher/notifications` et `/read`. 39 tests Vitest, ESLint et TypeScript propres sur les fichiers ajoutés.
+- Launcher : `notifications.rs` (challenge, `join` Mojang, jeton en mémoire, relance sur 401, liens limités au site ou https), cloche branchée, compte non lié → invitation à lier, bulles du système, réglage « notifications sur le bureau » réaffiché.
+- Vérifié de bout en bout avec le site lancé en local (port 3123) : `join` Mojang réel du compte Kaysuto, `hasJoined` confirmé, jeton de 122 caractères, notifications lues (compte lié, aucune notification) ; 401 sans jeton et avec un jeton falsifié. Rien marqué lu. Pas encore en production : le site n'est pas déployé.
+- Reste : évènements du jeu (plugin), non commencés.

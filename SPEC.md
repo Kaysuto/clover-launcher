@@ -224,6 +224,13 @@ Chaque réponse porte `schema: 1` ; ne changer la forme qu'en incrémentant ce n
 
 Le compteur global de l'accueil additionne les joueurs des modes du manifeste à partir de ces mêmes données (un mode hors ligne contribue zéro). Si un mode manque ou si sa mesure est inconnue, le total est masqué. Le ping de `server.host` indique uniquement la disponibilité du serveur : son compteur peut ne couvrir que le Lobby.
 
+### 3.6 quater Notifications (CLO-283)
+
+- **Session du launcher sur le site** : `GET /api/launcher/session?uuid=` donne un `serverId` (HMAC de l'UUID et de la minute) ; le launcher l'annonce à Mojang (`session/minecraft/join`, jeton Minecraft resté sur le poste) ; `POST /api/launcher/session { uuid, name }` vérifie par `hasJoined` (minute en cours ou précédente) et rend un jeton signé de 30 jours lié à l'UUID (clé dérivée de `BETTER_AUTH_SECRET`). Jeton gardé en mémoire par le launcher, redemandé sur un 401.
+- `GET /api/launcher/notifications` (Bearer) : 30 dernières notifications du compte du site lié (`users_meta.minecraft_uuid`), `linked: false` sinon ; `POST /api/launcher/notifications/read { ids? }`. Types du launcher : `purchase` (lien `/shop`), `reward` (type `success`), `announcement`.
+- Launcher : relève toutes les 60 s fenêtre visible, 5 min sinon ; clic = page du site + lu ; « Tout marquer lu ». Compte non lié : la cloche propose `/settings/minecraft`. Bulle du système (`tauri-plugin-notification`) pour une nouvelle notification fenêtre cachée ou sans focus, si « Afficher les notifications sur le bureau » est actif.
+- **Reste** : évènements du jeu (niveau, succès, récompenses) écrits par le plugin dans une table MySQL lue par le site ; non commencé (plugin et déploiement sur les 6 serveurs).
+
 ### 3.6 bis Quick Play par mode
 
 Un mode dont l'entrée du manifeste porte `host` (ex. `bedwars.play.clovergames.fr`) devient cliquable : le launcher lance `--quickPlayMultiplayer <host>`. Sans `host`, la carte reste informative et le joueur passe par le Lobby. Activer un mode demande, dans l'ordre :

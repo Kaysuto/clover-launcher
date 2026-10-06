@@ -25,10 +25,10 @@ import { DEFAULT_IMPORT, OnboardingAccounts, OnboardingDone, OnboardingImport, t
 import { type Account, type Settings, SettingsScreen, type SettingsTab, type HiddenSetting, type SteamState, settingsTabLabel } from "@/screens/SettingsScreen";
 import { SkinEditorDialog } from "@/screens/SkinEditorDialog";
 import { SkinsScreen } from "@/screens/SkinsScreen";
-import type { Cape, ConsoleSnapshot, DetectedInstance, ImportItem, ImportResult, ImportScan, InstanceEntry, InstanceInput, ModInfo, ModrinthKind, PersonalMod, PlayState, Profile, Progress, SavedSkin, SkinLook, Tab } from "@/types";
+import type { Cape, ConsoleSnapshot, DetectedInstance, ImportItem, ImportResult, ImportScan, LauncherNotification, InstanceEntry, InstanceInput, ModInfo, ModrinthKind, PersonalMod, PlayState, Profile, Progress, SavedSkin, SkinLook, Tab } from "@/types";
 
 /** Fonctions dont la ligne de réglage reste masquée tant qu'elles ne sont pas branchées. */
-const UPCOMING: HiddenSetting[] = ["desktopNotifications"];
+const UPCOMING: HiddenSetting[] = [];
 /** Paquet du Microsoft Store : le Store gère les mises à jour du launcher. */
 const STORE_HIDDEN: HiddenSetting[] = ["autoUpdate"];
 
@@ -48,6 +48,20 @@ const SERVER_RETRY_MS = 8_000;
 const SITE_POLL_MS = 60_000;
 /** Les réglages sont enregistrés 300 ms après le dernier changement. */
 const SETTINGS_SAVED_MS = 600;
+/** Notifications du site : toutes les minutes fenêtre ouverte, toutes les 5 min sinon. */
+const NOTIFICATIONS_POLL_MS = 60_000;
+const NOTIFICATIONS_HIDDEN_POLL_MS = 5 * 60_000;
+/** Compte Minecraft lié à aucun compte du site : la cloche explique comment le lier. */
+const LINK_NOTIFICATION: LauncherNotification = {
+  id: "link-account",
+  kind: "announcement",
+  source: "site",
+  title: "Lie ton compte Minecraft au site",
+  message: "Achats, récompenses et annonces de ton compte clovergames.fr apparaîtront ici.",
+  url: "/settings/minecraft",
+  createdAt: new Date(0).toISOString(),
+  read: false,
+};
 /** Mise à jour du launcher : vérification périodique, même fenêtre fermée. */
 const UPDATE_POLL_MS = 6 * 60 * 60_000;
 /** Console ouverte : nouvelles lignes du jeu. */
@@ -401,6 +415,53 @@ export default function App() {
   useEffect(() => {
     if (tab === "settings" && settingsTab === "storage") api.storageUsage().then(setStorage).catch(() => {});
   }, [tab, settingsTab]);
+
+  // ── Notifications du site (CLO-283) ──
+  const [notifications, setNotifications] = useState<LauncherNotification[]>([]);
+  /** Déjà vues : seules les nouvelles font une bulle du système. `null` avant la première relève. */
+  const seenNotifications = useRef<Set<string> | null>(null);
+  const desktopNotifications = useRef(true);
+  desktopNotifications.current = settings?.systemNotifications ?? true;
+  const signedIn = phase === "app" && Boolean(profile);
+  useEffect(() => {
+    if (!signedIn) return;
+    let cancelled = false;
+    let timer = 0;
+    seenNotifications.current = null;
+    const poll = async () => {
+      try {
+        const feed = await api.notifications();
+        if (cancelled) return;
+        const items: LauncherNotification[] = feed.linked ? feed.items.map((item) => ({ ...item, source: "site" })) : [LINK_NOTIFICATION];
+        const seen = seenNotifications.current;
+        const away = document.hidden || !document.hasFocus();
+        if (seen && away && desktopNotifications.current) {
+          for (const item of items.filter((entry) => !entry.read && !seen.has(entry.id))) void api.systemNotification(item.title, item.message).catch(() => {});
+        }
+        seenNotifications.current = new Set(items.map((item) => item.id));
+        setNotifications(items);
+      } catch {
+        // Site injoignable : la cloche garde ce qu'elle affichait.
+      }
+      if (!cancelled) timer = window.setTimeout(poll, document.hidden ? NOTIFICATIONS_HIDDEN_POLL_MS : NOTIFICATIONS_POLL_MS);
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [signedIn, profile?.uuid]);
+
+  const openNotification = (item: LauncherNotification) => {
+    if (item.url) open(item.url.startsWith("/") ? `${SITE_URL}${item.url}` : item.url);
+    if (item.id === LINK_NOTIFICATION.id || item.read) return;
+    setNotifications((items) => items.map((entry) => (entry.id === item.id ? { ...entry, read: true } : entry)));
+    api.markNotificationsRead([item.id]).catch(() => {});
+  };
+  const readAllNotifications = () => {
+    setNotifications((items) => items.map((entry) => (entry.id === LINK_NOTIFICATION.id ? entry : { ...entry, read: true })));
+    if (notifications.some((entry) => entry.id !== LINK_NOTIFICATION.id && !entry.read)) api.markNotificationsRead().catch(() => {});
+  };
 
   // ── Dossier du launcher : déplacé puis redémarrage ──
   const [moving, setMoving] = useState<number | null>(null);
@@ -913,7 +974,7 @@ export default function App() {
           )
         }
         activity={settings.showVotes && feed.votes ? <VoteTicker votes={feed.votes} onVote={() => open(`${SITE_URL}/vote`)} /> : undefined}
-        notifications={<NotificationBell items={[]} onOpen={() => {}} onReadAll={() => {}} />}
+        notifications={<NotificationBell items={notifications} onOpen={openNotification} onReadAll={readAllNotifications} />}
       />
 
       <div className="flex min-h-0 flex-1">

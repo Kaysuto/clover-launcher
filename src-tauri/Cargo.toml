@@ -46,6 +46,7 @@ tauri-plugin-window-state = "2"
 crc32fast = "1.5"
 trash = { version = "5", default-features = false, features = ["coinit_apartmentthreaded"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
 
 
 # Paquet MSIX du Microsoft Store : détection et tâche de démarrage (msix.rs).

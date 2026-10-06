@@ -7,7 +7,7 @@ import type { Instance, InstanceEntry, InstanceInput, AvailableVersion, ContentE
 
 import type { Settings, SteamState } from "@/screens/SettingsScreen";
 import type { RecentVote } from "@/components/VoteTicker";
-import type { ConsoleSnapshot, DetectedInstance, ImportItem, ImportResult, LauncherUpdate, ModCategory, ModrinthKind, ModrinthPage, ModrinthProject, NewsItem, PersonalMod, Profile, RecentServer, SkinModel } from "@/types";
+import type { ConsoleSnapshot, DetectedInstance, ImportItem, ImportResult, LauncherNotification, LauncherUpdate, ModCategory, ModrinthKind, ModrinthPage, ModrinthProject, NewsItem, PersonalMod, Profile, RecentServer, SkinModel } from "@/types";
 
 export type AccountRef = { uuid: string; name: string; skinUrl: string | null };
 
@@ -104,6 +104,12 @@ export const api = {
   pickGameDir: () => invoke<string | null>("pick_game_dir"),
   /** Déplace le dossier du launcher puis le redémarre ; avancement par l'évènement `move-progress`. */
   moveGameDir: (chosen: string) => invoke<void>("move_game_dir", { chosen }),
+  /** Notifications du compte du site lié au compte actif (CLO-283) ; `linked: false` sans compte lié. */
+  notifications: () => invoke<{ linked: boolean; items: Omit<LauncherNotification, "source">[] }>("notifications"),
+  /** Marque lues `ids`, ou toutes. */
+  markNotificationsRead: (ids?: string[]) => invoke<void>("mark_notifications_read", { ids: ids ?? null }),
+  /** Bulle du système (fenêtre cachée ou réduite). */
+  systemNotification: (title: string, message: string) => invoke<void>("system_notification", { title, message }),
   /** Raccourci « Clover Games » dans la bibliothèque Steam (CLO-285). */
   steamStatus: () => invoke<SteamState>("steam_status"),
   steamAdd: () => invoke<SteamState>("steam_add"),
