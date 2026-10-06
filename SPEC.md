@@ -170,7 +170,7 @@ En développement, tant que le CDN n'existe pas, `CLOVER_MANIFEST_DIR=manifest/d
 
 ### 3.4 Installation et lancement
 
-- **Dossier du jeu** : `~/.cloverlauncher/` sur les trois OS, séparé de `.minecraft`, modifiable. Hors d'`AppData`, il échappe aussi à la virtualisation MSIX (voir 3.7).
+- **Dossier du jeu** : `~/.cloverlauncher/` sur les trois OS, séparé de `.minecraft`, déplaçable depuis Paramètres › Stockage (`location.rs`) : sélecteur de dossier du système, refus d'un dossier synchronisé (OneDrive, Dropbox, Google Drive, iCloud), sans droit d'écriture, dans l'actuel ou non vide (un sous-dossier « Clover Launcher » est alors créé). Renommage sur le même disque, sinon copie avec progression puis suppression de l'original ; un échec retire la copie et laisse l'original. L'emplacement est noté dans `location.json` du dossier de configuration de l'application, puis le launcher redémarre. Refusé pendant une partie ou une installation. Hors d'`AppData`, il échappe aussi à la virtualisation MSIX (voir 3.7).
 - **Java** : le composant indiqué par le JSON de version (`javaVersion.component`, Java 25 pour 26.x) est pris dans le manifeste des runtimes Mojang, avec Adoptium en secours pour une plateforme absente.
 - **Minecraft** : JSON de version, `client.jar`, bibliothèques filtrées par règles OS/architecture, index et objets d'assets. Hash vérifié, téléchargements parallèles, reprise.
 - **Fabric** : profil `meta.fabricmc.net/v2/versions/loader/<mc>/<loader>/profile/json`, fusionné avec le JSON vanilla.

@@ -99,7 +99,11 @@ pub struct Paths {
 }
 
 impl Paths {
+    /// Dossier choisi dans les paramètres (`location.rs`), sinon `~/.cloverlauncher`.
     pub fn new(app: &AppHandle) -> Result<Self> {
+        if let Some(root) = crate::location::custom_root(app) {
+            return Ok(Self::from_root(root));
+        }
         let root = app
             .path()
             .home_dir()

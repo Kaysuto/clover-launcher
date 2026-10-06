@@ -72,6 +72,8 @@ type Props = {
   /** Import depuis les autres launchers (mêmes écrans qu'au premier lancement). */
   onImport: () => void;
   onChangeGameDir: () => void;
+  /** Déplacement du dossier en cours (0 à 1). */
+  moving?: number | null;
   onCleanStorage: () => void;
   steam: { state: SteamState; onAdd: () => void; onRemove: () => void };
   isStaff: boolean;
@@ -369,7 +371,7 @@ function Game({ settings, onChange, system, onResetRecommended, hidden = [] }: P
   );
 }
 
-function Storage({ storage, onOpenGameDir, onImport, onChangeGameDir, onCleanStorage, hidden = [] }: Props) {
+function Storage({ storage, onOpenGameDir, onImport, onChangeGameDir, onCleanStorage, moving = null, hidden = [] }: Props) {
   const total = storage.parts.reduce((sum, part) => sum + part.bytes, 0);
   return (
     <>
@@ -406,13 +408,24 @@ function Storage({ storage, onOpenGameDir, onImport, onChangeGameDir, onCleanSto
             Ouvrir le dossier
           </button>
           {!hidden.includes("changeGameDir") && (
-            <button type="button" onClick={onChangeGameDir} className={secondaryButton}>
+            <button type="button" onClick={onChangeGameDir} disabled={moving !== null} className={secondaryButton}>
               Changer…
             </button>
           )}
         </div>
         {!hidden.includes("changeGameDir") && (
-          <p className="text-xs text-muted-foreground">Changer de dossier déplace les fichiers : l'opération peut durer plusieurs minutes.</p>
+          moving !== null ? (
+            <div className="flex items-center gap-3" aria-live="polite">
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
+                <div className="h-full bg-primary transition-[width]" style={{ width: `${Math.round(moving * 100)}%` }} />
+              </div>
+              <span className="font-pixel text-[12px]">{Math.round(moving * 100)} %</span>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Tout le dossier est déplacé (jeu, mondes, instances, réglages), puis le launcher redémarre. Pas dans un dossier synchronisé (OneDrive…). En cas d'échec, rien ne change.
+            </p>
+          )
         )}
       </Row>
       <Row title="Autres launchers" hint="Launcher officiel, Modrinth App, Prism Launcher, MultiMC, CurseForge. Leurs fichiers sont copiés, jamais déplacés.">

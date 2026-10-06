@@ -100,6 +100,10 @@ export const api = {
   removeAccount: (uuid: string) => invoke<Profile | null>("remove_account", { uuid }),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   finishOnboarding: () => invoke<void>("finish_onboarding"),
+  /** Sélecteur de dossier du système ; `null` si le joueur annule. */
+  pickGameDir: () => invoke<string | null>("pick_game_dir"),
+  /** Déplace le dossier du launcher puis le redémarre ; avancement par l'évènement `move-progress`. */
+  moveGameDir: (chosen: string) => invoke<void>("move_game_dir", { chosen }),
   /** Raccourci « Clover Games » dans la bibliothèque Steam (CLO-285). */
   steamStatus: () => invoke<SteamState>("steam_status"),
   steamAdd: () => invoke<SteamState>("steam_add"),

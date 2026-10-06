@@ -28,7 +28,7 @@ import { SkinsScreen } from "@/screens/SkinsScreen";
 import type { Cape, ConsoleSnapshot, DetectedInstance, ImportItem, ImportResult, ImportScan, InstanceEntry, InstanceInput, ModInfo, ModrinthKind, PersonalMod, PlayState, Profile, Progress, SavedSkin, SkinLook, Tab } from "@/types";
 
 /** Fonctions dont la ligne de réglage reste masquée tant qu'elles ne sont pas branchées. */
-const UPCOMING: HiddenSetting[] = ["desktopNotifications", "changeGameDir"];
+const UPCOMING: HiddenSetting[] = ["desktopNotifications"];
 /** Paquet du Microsoft Store : le Store gère les mises à jour du launcher. */
 const STORE_HIDDEN: HiddenSetting[] = ["autoUpdate"];
 
@@ -401,6 +401,25 @@ export default function App() {
   useEffect(() => {
     if (tab === "settings" && settingsTab === "storage") api.storageUsage().then(setStorage).catch(() => {});
   }, [tab, settingsTab]);
+
+  // ── Dossier du launcher : déplacé puis redémarrage ──
+  const [moving, setMoving] = useState<number | null>(null);
+  useEffect(() => {
+    const unlisten = listen<number>("move-progress", ({ payload }) => setMoving(payload));
+    return () => void unlisten.then((stop) => stop());
+  }, []);
+  const changeGameDir = async () => {
+    const chosen = await api.pickGameDir().catch(() => null);
+    if (!chosen) return;
+    setMoving(0);
+    try {
+      await api.moveGameDir(chosen);
+    } catch (reason) {
+      setNotice(String(reason));
+    } finally {
+      setMoving(null);
+    }
+  };
 
   // Steam : état relu toutes les 3 s sur l'onglet Intégrations, le joueur doit souvent le fermer.
   const [steam, setSteam] = useState<SteamState>("absent");
@@ -1013,7 +1032,8 @@ export default function App() {
               }}
               onOpenGameDir={() => void api.openGameDir()}
               onImport={() => openImport("import")}
-              onChangeGameDir={() => {}}
+              onChangeGameDir={() => void changeGameDir()}
+              moving={moving}
               onCleanStorage={async () => {
                 await api.cleanStorage();
                 setStorage(await api.storageUsage());

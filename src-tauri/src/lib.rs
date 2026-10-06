@@ -3,6 +3,7 @@ mod game;
 mod history;
 mod import;
 mod instances;
+mod location;
 mod machine;
 mod msix;
 mod presence;
@@ -693,6 +694,7 @@ pub fn run() {
         // En premier : une seconde instance réaffiche la fenêtre existante puis se ferme.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main_window(app)))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![MINIMIZED_ARG])))
         // Taille, position et état agrandi retrouvés d'une ouverture à l'autre. Sans `VISIBLE` : la
@@ -833,6 +835,8 @@ pub fn run() {
             finish_onboarding,
             note_server_version,
             reset_recommended,
+            location::pick_game_dir,
+            location::move_game_dir,
             steam::steam_status,
             steam::steam_add,
             steam::steam_remove,

@@ -266,3 +266,7 @@
 ### CLO-285 — Steam
 - `steam.rs` : lecture/écriture des KeyValues binaires (tables, chaînes, entiers 32/64 bits, flottants gardés tels quels), raccourci ajouté une seule fois par compte, les autres raccourcis conservés à l'octet près, `.bak`, refus si Steam tourne ou si le fichier est illisible. Images générées (`design/steam/make-art.py`, police Lilita One convertie du WOFF2, trèfle du launcher, fond du bandeau) et contrôlées visuellement. Interface : état relu toutes les 3 s sur l'onglet Intégrations.
 - Vérifié : tests (aller-retour binaire, ajout/retrait idempotent avec un autre jeu intact, fichier illisible épargné), détection réelle : Steam trouvé par le registre (`c:/program files (x86)/steam`, compte 276778190), état « ouvert » car Steam tournait. Pas d'ajout réel dans le Steam du poste (il était ouvert, et c'est celui de Kaysuto).
+
+### CLO-274 / CLO-285 — changer le dossier du jeu
+- `location.rs` (`pick_game_dir` par `tauri-plugin-dialog`, `move_game_dir`), `Paths::new` lit l'emplacement choisi. Interface : bouton « Changer… » réaffiché, barre de progression, redémarrage.
+- Vérifié : tests (dossiers synchronisés, dans l'actuel, relatif, non vide → « Clover Launcher », déplacement complet avec progression), clippy `-D warnings`, `tsc`. Pas de déplacement réel du dossier de Kaysuto.
