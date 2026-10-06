@@ -113,6 +113,25 @@ async function resolveMods(catalogue, minecraft) {
   return [...resolved.values()].map((mod) => ({ ...mod, available: available(mod.id) }));
 }
 
+/**
+ * Réglages de départ par niveau de machine (presets.json, commun aux canaux) : lignes d'options.txt
+ * et fichiers de config/. `common` s'ajoute à chaque niveau ; un fichier donné en objet est écrit
+ * en JSON. Le launcher n'écrit un fichier que s'il n'existe pas encore.
+ */
+async function presets() {
+  const file = join(ROOT, "presets.json");
+  if (!existsSync(file)) return {};
+  const { common = {}, ...levels } = JSON.parse(await readFile(file, "utf8"));
+  const text = (files = {}) => Object.fromEntries(Object.entries(files).map(([path, content]) => [path, typeof content === "string" ? content : `${JSON.stringify(content, null, 2)}
+`]));
+  return Object.fromEntries(
+    Object.entries(levels).map(([level, preset]) => [
+      level,
+      { options: { ...common.options, ...preset.options }, files: { ...text(common.files), ...text(preset.files) } },
+    ]),
+  );
+}
+
 async function build(channel) {
   const keyFile = process.env.CLOVER_MANIFEST_KEY;
   if (!keyFile || !existsSync(keyFile)) {
@@ -134,6 +153,7 @@ async function build(channel) {
     mods: await resolveMods(source.mods, source.minecraft),
     // Comptes Minecraft (UUID) qui voient le réglage « Canal bêta » du launcher.
     betaTesters: source.betaTesters ?? [],
+    presets: await presets(),
   };
 
   const bytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, "utf8");

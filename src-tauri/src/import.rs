@@ -18,6 +18,7 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::game::servers_dat;
 use crate::{game, instances, AppState};
 
 /// Dernière détection, gardée pour la session : une nouvelle recherche ne relit que les mods
@@ -387,7 +388,7 @@ impl Folder {
 }
 
 fn content(game: &Path) -> Content {
-    let servers = fs::read(game.join("servers.dat")).ok().and_then(|bytes| servers::entries(&bytes).map(|list| list.iter().filter(|entry| !servers::hidden(entry)).count()));
+    let servers = fs::read(game.join("servers.dat")).ok().and_then(|bytes| servers_dat::entries(&bytes).map(|list| list.iter().filter(|entry| !servers_dat::hidden(entry)).count()));
     Content {
         options: game.join("options.txt").is_file(),
         servers: servers.unwrap_or(0),
@@ -606,28 +607,28 @@ fn config_entries(game: &Path) -> Vec<PathBuf> {
 /// nombre. Une liste Clover illisible est gardée en `.bak` puis remplacée.
 fn merge_servers(source: &Path, target: &Path) -> io::Result<usize> {
     let Ok(incoming) = fs::read(source) else { return Ok(0) };
-    let Some(incoming) = servers::entries(&incoming) else { return Ok(0) };
+    let Some(incoming) = servers_dat::entries(&incoming) else { return Ok(0) };
     let existing = fs::read(target).unwrap_or_default();
     let current = if existing.is_empty() {
         Vec::new()
-    } else if let Some(current) = servers::entries(&existing) {
+    } else if let Some(current) = servers_dat::entries(&existing) {
         current
     } else {
         fs::copy(target, backup(target))?;
         Vec::new()
     };
-    let mut known: HashSet<String> = current.iter().filter_map(|entry| servers::address(entry)).collect();
+    let mut known: HashSet<String> = current.iter().filter_map(|entry| servers_dat::address(entry)).collect();
     // Les entrées masquées ne servent qu'au jeu (connexions directes) : elles ne sont pas reprises.
     let added: Vec<&[u8]> = incoming
         .into_iter()
-        .filter(|entry| !servers::hidden(entry))
-        .filter(|entry| servers::address(entry).is_none_or(|address| known.insert(address)))
+        .filter(|entry| !servers_dat::hidden(entry))
+        .filter(|entry| servers_dat::address(entry).is_none_or(|address| known.insert(address)))
         .collect();
     if added.is_empty() {
         return Ok(0);
     }
     let merged: Vec<&[u8]> = current.into_iter().chain(added.iter().copied()).collect();
-    write_atomically(target, &servers::write(&merged))?;
+    write_atomically(target, &servers_dat::write(&merged))?;
     Ok(added.len())
 }
 
@@ -684,156 +685,6 @@ fn size(path: &Path) -> u64 {
         return metadata.len();
     }
     fs::read_dir(path).map(|read| read.flatten().map(|entry| size(&entry.path())).sum()).unwrap_or(0)
-}
-
-/// `servers.dat` : NBT non compressé, composé racine qui ne contient que la liste `servers`
-/// (`name`, `ip`, `icon`, `hidden`…). Juste de quoi compter, comparer et fusionner les entrées.
-mod servers {
-    const END: u8 = 0;
-    const BYTE: u8 = 1;
-    const STRING: u8 = 8;
-    const LIST: u8 = 9;
-    const COMPOUND: u8 = 10;
-    /// Profondeur d'imbrication acceptée, bien au-delà de celle d'une entrée de serveur.
-    const MAX_DEPTH: u8 = 32;
-
-    struct Reader<'a> {
-        bytes: &'a [u8],
-        pos: usize,
-    }
-
-    impl<'a> Reader<'a> {
-        fn take(&mut self, n: usize) -> Option<&'a [u8]> {
-            let slice = self.bytes.get(self.pos..self.pos.checked_add(n)?)?;
-            self.pos += n;
-            Some(slice)
-        }
-
-        fn byte(&mut self) -> Option<u8> {
-            Some(self.take(1)?[0])
-        }
-
-        fn length(&mut self) -> Option<usize> {
-            usize::try_from(i32::from_be_bytes(self.take(4)?.try_into().ok()?)).ok()
-        }
-
-        fn string(&mut self) -> Option<&'a [u8]> {
-            let n = u16::from_be_bytes(self.take(2)?.try_into().ok()?);
-            self.take(usize::from(n))
-        }
-
-        /// Passe la valeur d'une balise de type `kind`.
-        fn skip(&mut self, kind: u8, depth: u8) -> Option<()> {
-            if depth > MAX_DEPTH {
-                return None;
-            }
-            match kind {
-                1 => self.take(1).map(drop),
-                2 => self.take(2).map(drop),
-                3 | 5 => self.take(4).map(drop),
-                4 | 6 => self.take(8).map(drop),
-                7 => {
-                    let n = self.length()?;
-                    self.take(n).map(drop)
-                }
-                STRING => self.string().map(drop),
-                LIST => {
-                    let item = self.byte()?;
-                    for _ in 0..self.length()? {
-                        self.skip(item, depth + 1)?;
-                    }
-                    Some(())
-                }
-                COMPOUND => loop {
-                    let tag = self.byte()?;
-                    if tag == END {
-                        return Some(());
-                    }
-                    self.string()?;
-                    self.skip(tag, depth + 1)?;
-                },
-                11 => {
-                    let n = self.length()?;
-                    self.take(n.checked_mul(4)?).map(drop)
-                }
-                12 => {
-                    let n = self.length()?;
-                    self.take(n.checked_mul(8)?).map(drop)
-                }
-                _ => None,
-            }
-        }
-
-        /// Dans un composé, se place sur la valeur de la balise `name` de type `kind`.
-        fn find(mut self, kind: u8, name: &[u8]) -> Option<Self> {
-            loop {
-                let tag = self.byte()?;
-                if tag == END {
-                    return None;
-                }
-                let found = self.string()? == name;
-                if found && tag == kind {
-                    return Some(self);
-                }
-                self.skip(tag, 1)?;
-            }
-        }
-    }
-
-    /// Entrées de la liste (valeur brute du composé, balise de fin comprise) ; `None` si le
-    /// fichier n'est pas lisible.
-    pub fn entries(bytes: &[u8]) -> Option<Vec<&[u8]>> {
-        let mut reader = Reader { bytes, pos: 0 };
-        if reader.byte()? != COMPOUND {
-            return None;
-        }
-        reader.string()?;
-        let mut entries = Vec::new();
-        loop {
-            let tag = reader.byte()?;
-            if tag == END {
-                return Some(entries);
-            }
-            let name = reader.string()?;
-            if tag == LIST && name == b"servers" {
-                let item = reader.byte()?;
-                let n = reader.length()?;
-                if n > 0 && item != COMPOUND {
-                    return None;
-                }
-                for _ in 0..n {
-                    let start = reader.pos;
-                    reader.skip(COMPOUND, 1)?;
-                    entries.push(&bytes[start..reader.pos]);
-                }
-            } else {
-                reader.skip(tag, 1)?;
-            }
-        }
-    }
-
-    /// Adresse en minuscules, pour reconnaître un serveur déjà enregistré.
-    pub fn address(entry: &[u8]) -> Option<String> {
-        let ip = Reader { bytes: entry, pos: 0 }.find(STRING, b"ip")?.string()?;
-        Some(String::from_utf8_lossy(ip).trim().to_ascii_lowercase())
-    }
-
-    /// Entrée gardée par le jeu pour une connexion directe, absente du menu Multijoueur.
-    pub fn hidden(entry: &[u8]) -> bool {
-        Reader { bytes: entry, pos: 0 }.find(BYTE, b"hidden").and_then(|mut reader| reader.byte()).is_some_and(|value| value != 0)
-    }
-
-    pub fn write(entries: &[&[u8]]) -> Vec<u8> {
-        let mut out = vec![COMPOUND, 0, 0, LIST, 0, 7];
-        out.extend_from_slice(b"servers");
-        out.push(COMPOUND);
-        out.extend_from_slice(&i32::try_from(entries.len()).unwrap_or(i32::MAX).to_be_bytes());
-        for entry in entries {
-            out.extend_from_slice(entry);
-        }
-        out.push(END);
-        out
-    }
 }
 
 // ── Commandes ───────────────────────────────────────────────────────────────────
@@ -1031,7 +882,7 @@ mod tests {
     }
 
     fn servers_dat(entries: &[Vec<u8>]) -> Vec<u8> {
-        servers::write(&entries.iter().map(Vec::as_slice).collect::<Vec<_>>())
+        servers_dat::write(&entries.iter().map(Vec::as_slice).collect::<Vec<_>>())
     }
 
     #[test]
@@ -1055,12 +906,12 @@ mod tests {
 
         assert_eq!(merge_servers(&source.join("servers.dat"), &target.join("servers.dat")).unwrap(), 1);
         let merged = fs::read(target.join("servers.dat")).unwrap();
-        let entries = servers::entries(&merged).unwrap();
-        let addresses: Vec<_> = entries.iter().filter_map(|entry| servers::address(entry)).collect();
+        let entries = servers_dat::entries(&merged).unwrap();
+        let addresses: Vec<_> = entries.iter().filter_map(|entry| servers_dat::address(entry)).collect();
         assert_eq!(addresses, ["play.clovergames.fr", "mc.hypixel.net"]);
         // Relancé, l'import n'ajoute rien.
         assert_eq!(merge_servers(&source.join("servers.dat"), &target.join("servers.dat")).unwrap(), 0);
-        assert!(servers::entries(b"\x0a\x00\x00\x09\x00").is_none());
+        assert!(servers_dat::entries(b"\x0a\x00\x00\x09\x00").is_none());
     }
 
     #[test]

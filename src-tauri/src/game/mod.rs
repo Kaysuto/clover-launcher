@@ -10,6 +10,8 @@ pub mod manifest;
 pub mod modrinth;
 pub(crate) mod mods;
 pub mod personal;
+pub mod presets;
+pub mod servers_dat;
 pub mod quick_play;
 mod version;
 pub(crate) mod window_title;
@@ -147,7 +149,14 @@ pub struct LaunchOptions {
 
 /// Quart de la mémoire du poste, borné entre 2 et 6 Go.
 pub fn auto_memory_mb() -> u64 {
-    (total_memory_mb() / 4).clamp(2048, 6144)
+    memory_for(total_memory_mb(), false)
+}
+
+/// Mémoire automatique : un quart de la RAM, entre 2 et 6 Go ; 1 Go de plus avec les shaders
+/// (Iris) ; jamais plus de la moitié de la RAM, pour le système et le launcher.
+pub fn memory_for(total_mb: u64, shaders: bool) -> u64 {
+    let base = (total_mb / 4).clamp(2048, 6144) + if shaders { 1024 } else { 0 };
+    base.min(total_mb / 2).max(1024)
 }
 
 pub fn total_memory_mb() -> u64 {
@@ -166,6 +175,20 @@ pub fn installed_java(paths: &Paths) -> Option<String> {
             text.lines().find_map(|line| line.strip_prefix("JAVA_VERSION=").map(|value| value.trim_matches('"').to_owned()))
         })
     })
+}
+
+/// Réglages de départ du niveau de la machine (fichiers absents seulement, sauf `replace`) et pack
+/// de ressources des serveurs du réseau accepté d'office. Renvoie les fichiers écrits.
+pub fn apply_presets(paths: &Paths, manifest: &manifest::Manifest, version_id: &str, replace: bool) -> Result<Vec<String>> {
+    let mut written = Vec::new();
+    if let Some(preset) = manifest.presets.get(crate::machine::profile().level.key()) {
+        let data_version = presets::data_version(&paths.versions.join(version_id).join(format!("{version_id}.jar")));
+        written = presets::apply(&paths.game, preset, data_version, replace)?;
+    }
+    if servers_dat::accept_packs(&paths.game.join("servers.dat"), &manifest.hosts())? > 0 {
+        written.push("servers.dat".into());
+    }
+    Ok(written)
 }
 
 /// Canal choisi dans les paramètres (« Canal bêta »).
@@ -205,6 +228,8 @@ pub async fn play(
         Destination::Server(address) => address,
     };
     let enabled = options.enabled_mods.clone().unwrap_or_else(|| manifest.default_mods());
+    let mut options = options;
+    options.memory_mb = options.memory_mb.or_else(|| Some(memory_for(total_memory_mb(), enabled.contains("iris"))));
     eprintln!(
         "[manifest] n°{} : Minecraft {}, Fabric {}, {} mods activés",
         manifest.serial,
@@ -213,10 +238,27 @@ pub async fn play(
         enabled.len()
     );
     let installation = install::install(&http, &paths, &manifest, &progress).await?;
+    if let Err(error) = apply_presets(&paths, &manifest, &installation.vanilla.id, false) {
+        eprintln!("[préréglages] non appliqués : {error}");
+    }
     let personal = personal::loadable(&paths.personal_mods, &options.disabled_personal_mods, &manifest.minecraft.version);
     mods::sync(&http, &paths.mods, &manifest, &enabled, &personal, &|done, total| {
         progress(Progress { phase: "mods", done, total })
     })
     .await?;
     launch::spawn(app, &paths, installation, session, Some(&server), &options, on_join).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn automatic_memory_follows_shaders_and_stays_under_half() {
+        assert_eq!(memory_for(32 * 1024, false), 6144);
+        assert_eq!(memory_for(32 * 1024, true), 7168);
+        assert_eq!(memory_for(16 * 1024, true), 5120);
+        assert_eq!(memory_for(6 * 1024, true), 3072);
+        assert_eq!(memory_for(4 * 1024, false), 2048);
+    }
 }

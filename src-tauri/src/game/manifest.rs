@@ -39,6 +39,16 @@ pub struct Manifest {
     /// Comptes Minecraft (UUID) qui voient le réglage « Canal bêta ». Absent des anciens manifestes.
     #[serde(default)]
     pub beta_testers: Vec<String>,
+    /// Réglages de départ par niveau de machine (`modest`, `standard`, `powerful`).
+    #[serde(default)]
+    pub presets: std::collections::BTreeMap<String, super::presets::Preset>,
+}
+
+impl Manifest {
+    /// Adresses des serveurs du réseau : principale et celles des modes.
+    pub fn hosts(&self) -> Vec<&str> {
+        std::iter::once(self.server.host.as_str()).chain(self.modes.iter().filter_map(|mode| mode.host.as_deref())).collect()
+    }
 }
 
 

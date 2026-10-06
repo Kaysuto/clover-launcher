@@ -3,6 +3,7 @@ mod game;
 mod history;
 mod import;
 mod instances;
+mod machine;
 mod msix;
 mod presence;
 mod site;
@@ -247,6 +248,22 @@ fn finish_onboarding(state: State<'_, AppState>) -> Result<(), String> {
     state.update(|stored| stored.onboarded = true)
 }
 
+/// « Rétablir les réglages recommandés » de l'instance Clover Games : préréglages du niveau de la
+/// machine, anciens fichiers gardés en `.bak`. Pas pendant une partie : le jeu réécrirait
+/// `options.txt` en quittant. Renvoie les fichiers écrits.
+#[tauri::command]
+async fn reset_recommended(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    if app.state::<game::console::Console>().running() || instances::managed_game_running(&state.root) {
+        return Err("Ferme Minecraft avant de rétablir les réglages.".into());
+    }
+    let manifest = game::catalogue(&app).await.map_err(|e| e.to_string())?;
+    if manifest.presets.is_empty() {
+        return Err("Aucun réglage recommandé n'est encore publié.".into());
+    }
+    let paths = instances::paths(game::Paths::new(&app).map_err(|e| e.to_string())?, &instances::Instance::builtin()).map_err(|e| e.to_string())?;
+    game::apply_presets(&paths, &manifest, &manifest.minecraft.version, true).map_err(|e| e.to_string())
+}
+
 /// Retient la version de Minecraft du serveur ; renvoie l'ancienne si elle change (à annoncer).
 #[tauri::command]
 fn note_server_version(version: String, state: State<'_, AppState>) -> Result<Option<String>, String> {
@@ -282,6 +299,8 @@ struct SystemInfo {
     store: bool,
     /// Icône de zone de notification visible (GNOME sans AppIndicator : non).
     tray: bool,
+    /// Profil de la machine et niveau des réglages recommandés.
+    machine: &'static machine::Profile,
 }
 
 #[tauri::command]
@@ -294,6 +313,7 @@ fn system_info(app: AppHandle) -> Result<SystemInfo, String> {
         launcher: env!("CARGO_PKG_VERSION"),
         store: msix::packaged(),
         tray: tray_supported(),
+        machine: machine::profile(),
     })
 }
 
@@ -811,6 +831,7 @@ pub fn run() {
             save_settings,
             finish_onboarding,
             note_server_version,
+            reset_recommended,
             get_catalogue,
             server_status,
             site_feed,

@@ -10,7 +10,7 @@ import { AccountMenu } from "@/components/AccountMenu";
 import { TitleBar } from "@/components/TitleBar";
 import { type UpdateState, UpdateToast } from "@/components/UpdateToast";
 import { VoteTicker } from "@/components/VoteTicker";
-import { api, type Catalogue, type ServerStatus, type SiteFeed, type SkinEntry, type Stored, type StorageUsage, type SystemInfo } from "@/lib/api";
+import { api, type Catalogue, type MachineLevel, type ServerStatus, type SiteFeed, type SkinEntry, type Stored, type StorageUsage, type SystemInfo } from "@/lib/api";
 import { formatLog } from "@/lib/log";
 import { networkPlayers } from "@/lib/site";
 import { ConsoleScreen } from "@/screens/ConsoleScreen";
@@ -28,7 +28,7 @@ import { SkinsScreen } from "@/screens/SkinsScreen";
 import type { Cape, ConsoleSnapshot, DetectedInstance, ImportItem, ImportResult, ImportScan, InstanceEntry, InstanceInput, ModInfo, ModrinthKind, PersonalMod, PlayState, Profile, Progress, SavedSkin, SkinLook, Tab } from "@/types";
 
 /** Fonctions dont la ligne de réglage reste masquée tant qu'elles ne sont pas branchées. */
-const UPCOMING: HiddenSetting[] = ["desktopNotifications", "recommended", "steam", "changeGameDir"];
+const UPCOMING: HiddenSetting[] = ["desktopNotifications", "steam", "changeGameDir"];
 /** Paquet du Microsoft Store : le Store gère les mises à jour du launcher. */
 const STORE_HIDDEN: HiddenSetting[] = ["autoUpdate"];
 
@@ -77,6 +77,15 @@ function importSummary(instance: DetectedInstance, result: ImportResult, mods: n
     ...count(result.dependencies, "dépendance ajoutée", "dépendances ajoutées"),
   ];
   return `${instance.launcher} · ${instance.name} : ${parts.length > 0 ? parts.join(", ") : "déjà à jour"}`;
+}
+
+const LEVEL_LABEL: Record<MachineLevel, string> = { modest: "machine modeste", standard: "machine standard", powerful: "machine puissante" };
+
+/** « 32 Go de mémoire · 32 cœurs · NVIDIA GeForce RTX 5080 (16 Go) ». */
+function machineSummary(system: SystemInfo): string {
+  const { gpu, cores } = system.machine;
+  const card = gpu ? ` · ${gpu.name}${gpu.vramMb ? ` (${Math.round(gpu.vramMb / 1024)} Go)` : ""}` : "";
+  return `${system.totalMemoryGb} Go de mémoire · ${cores} cœurs${card}`;
 }
 
 /** Compte listé dans le manifeste pour tester le canal bêta (UUID avec ou sans tirets). */
@@ -814,7 +823,8 @@ export default function App() {
             accounts={accounts}
             imports={imports.map((entry) => entry.summary)}
             machine={{
-              summary: system ? `${system.totalMemoryGb} Go de mémoire` : "Configuration détectée au premier lancement",
+              summary: system ? machineSummary(system) : "Configuration détectée au premier lancement",
+              preset: system && catalogue?.presets?.[system.machine.level] ? LEVEL_LABEL[system.machine.level] : undefined,
               memoryGb: settings.memoryAuto ? (system?.autoMemoryGb ?? 4) : settings.memoryGb,
             }}
             crashReports={settings.crashReports}
@@ -980,7 +990,12 @@ export default function App() {
               onUseAccount={useAccount}
               onRemoveAccount={removeAccount}
               onAddAccount={addAccount}
-              onResetRecommended={() => {}}
+              onResetRecommended={() =>
+                api
+                  .resetRecommended()
+                  .then((written) => setNotice(written.length > 0 ? "Réglages recommandés rétablis : les anciens fichiers sont gardés en .bak dans le dossier du jeu." : "Réglages déjà à jour."))
+                  .catch((reason) => setNotice(String(reason)))
+              }
               storage={{
                 parts: (storage?.parts ?? []).filter((part) => part.bytes > 0).map((part) => ({ ...part, color: STORAGE_COLORS[part.id] ?? "#8a8477" })),
                 reclaimable: storage?.reclaimable ?? 0,

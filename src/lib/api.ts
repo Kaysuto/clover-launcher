@@ -30,6 +30,8 @@ export type Catalogue = {
   minecraft: { version: string };
   /** Comptes Minecraft (UUID) qui voient le réglage « Canal bêta ». */
   betaTesters?: string[];
+  /** Réglages recommandés par niveau de machine (absents des anciens manifestes). */
+  presets?: Partial<Record<MachineLevel, unknown>>;
   fabric: { loader: string };
   server: { host: string };
   modes: { id: string; name: string; image: string | null; host?: string }[];
@@ -57,8 +59,11 @@ export type SiteFeed = {
   votes: RecentVote[] | null;
 };
 /** `store` : lancé depuis le paquet du Microsoft Store (mises à jour par le Store). */
+/** Niveau de la machine, qui choisit les réglages recommandés (CLO-280). */
+export type MachineLevel = "modest" | "standard" | "powerful";
+export type MachineProfile = { memoryMb: number; cores: number; gpu: { name: string; vramMb: number | null } | null; level: MachineLevel };
 /** `tray` : icône de zone de notification visible (GNOME sans l'extension AppIndicator : non). */
-export type SystemInfo = { totalMemoryGb: number; autoMemoryGb: number; java: string | null; launcher: string; store: boolean; tray: boolean };
+export type SystemInfo = { totalMemoryGb: number; autoMemoryGb: number; java: string | null; launcher: string; store: boolean; tray: boolean; machine: MachineProfile };
 export type StorageUsage = { parts: { id: string; label: string; bytes: number }[]; reclaimable: number; gameDir: string };
 export type SkinEntry = { id: string; name: string; model: SkinModel; texture: string };
 export type TrayState = { available: boolean; canPlay: boolean };
@@ -95,6 +100,8 @@ export const api = {
   removeAccount: (uuid: string) => invoke<Profile | null>("remove_account", { uuid }),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   finishOnboarding: () => invoke<void>("finish_onboarding"),
+  /** Réglages recommandés pour la machine, dans l'instance Clover Games ; fichiers écrits. */
+  resetRecommended: () => invoke<string[]>("reset_recommended"),
   /** Retient la version de Minecraft du serveur ; l'ancienne si elle vient de changer. */
   noteServerVersion: (version: string) => invoke<string | null>("note_server_version", { version }),
   getCatalogue: () => invoke<Catalogue>("get_catalogue"),
