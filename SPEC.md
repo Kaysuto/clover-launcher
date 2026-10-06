@@ -31,7 +31,7 @@ Le launcher suit le serveur : la version, les mods et les modes sont décrits da
 | Mises à jour | Launcher mis à jour automatiquement ; contenu du jeu resynchronisé à chaque lancement. |
 | Discord | (ID d’application public `1556616919925268480`, embarqué dans `src-tauri/src/presence.rs`) Statut « Joue à Clover Games » via Discord Rich Presence : dans le launcher, puis en jeu avec la durée de la partie, logo Clover, tête du compte actif en petite image (Minotar, pseudo au survol) et boutons « Rejoindre le Discord » et « Site ». Désactivable dans les paramètres. Le mode en cours (BedWars, Practice…) arrive en V2 avec le mod Clover. |
 | Console | Sortie du jeu en direct pendant la partie, sinon celle de la dernière partie (relue au démarrage du launcher). Filtres infos / avertissements / erreurs, recherche, copie des lignes affichées, « Effacer » (vide la console, pas le fichier journal), accès au dossier des journaux. Pendant la partie, « Voir la console » sous « Jouer » y mène. Le jeton Minecraft est masqué s'il apparaît dans la sortie. |
-| Plantages | Accord demandé au premier lancement. Plantage du launcher envoyé à Sentry si accepté. Plantage du jeu : écran dédié avec la fin de la console et sa copie. |
+| Plantages | Accord demandé au premier lancement, désactivé par défaut, modifiable dans Paramètres › Intégrations. Plantage du launcher envoyé à Sentry si accepté (voir 3.8 bis). Plantage du jeu : écran dédié avec la fin de la console et sa copie. |
 | Langue | Français uniquement. |
 
 Zone de notification : clic gauche pour rouvrir le launcher ; menu compact avec Ouvrir,
@@ -282,6 +282,14 @@ GitHub Actions sur un dépôt privé `Kaysuto/clover-launcher` : lint, tests Rus
 - `ci.yml` : sur `main` et les pull requests, Linux seul (`npm run build`, `cargo clippy -D warnings`, `cargo test`).
 - `release.yml` : sur un tag `v<version>` égal à la version de `src-tauri/Cargo.toml`. Rejoue `ci.yml`, construit NSIS (Windows), `.app`/`.dmg` universels signés ad hoc (macOS), AppImage, `.deb`, `.rpm` (Ubuntu 22.04), puis `scripts/release.mjs` vérifie que rien ne manque et écrit `latest.json` et `downloads.json`, envoyés sur R2 après les paquets.
 - `manifest.yml` : à la main ; résout le catalogue sur Modrinth, signe et publie le manifeste prod.
+
+### 3.8 bis Rapports de plantage (Sentry)
+
+Projet Sentry (région UE, `ingest.de.sentry.io`) ; DSN public par nature, embarqué dans `src-tauri/src/crash.rs` et transmis à l'interface par `system_info`. Rien ne part sans l'accord du joueur :
+
+- **Cœur Rust** (crate `sentry`, transport `reqwest`/rustls déjà présent) : client créé au démarrage du launcher, `before_send` jette tout tant que `crash_reports` est faux ; paniques capturées (le gestionnaire envoie avant l'arrêt, même avec `panic = "abort"`). Ni suivi de session ni nom de machine ; dossier personnel remplacé par `~` dans les messages ; étiquette `canal` (prod ou beta), environnement `production` ou `development`, version `clover-launcher@<version>`.
+- **Interface** (`@sentry/react`, `src/lib/crash-reports.ts`) : démarré seulement quand l'accord est donné, fermé quand il est retiré ; erreurs non rattrapées, promesses rejetées et erreurs de rendu React. Sans `BrowserSession`, sans rapports d'envoi, `dataCollection` coupé (utilisateur, cookies, en-têtes, corps, paramètres) ; dossiers personnels retirés des messages et du fil d'actions.
+- Pas de traces de performance (OpenTelemetry) : hors du périmètre accepté par le joueur.
 
 ## 4. Risques à lever au prototype
 

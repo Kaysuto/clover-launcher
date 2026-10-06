@@ -1,3 +1,4 @@
+import { reactErrorHandler } from "@sentry/react";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -15,7 +16,8 @@ document.addEventListener("contextmenu", (event) => {
 const trayMenu = getCurrentWindow().label === "tray-menu";
 if (trayMenu) document.documentElement.dataset.surface = "tray-menu";
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+// Erreurs de rendu React : vers Sentry si les rapports de plantage sont acceptés, sinon ignorées.
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement, { onUncaughtError: reactErrorHandler(), onCaughtError: reactErrorHandler() }).render(
   <React.StrictMode>
     {trayMenu ? <TrayMenu /> : <><App /><ResizeHandles /></>}
   </React.StrictMode>,

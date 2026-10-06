@@ -474,7 +474,7 @@ function Integrations({ settings, onChange, steam, hidden = [] }: Props) {
       </Row>
       )}
 
-      <Row title="Rapports de plantage" hint="Version du launcher, système et message d'erreur. Jamais ton mot de passe ni tes jetons de connexion.">
+      <Row title="Rapports de plantage" hint="Version du launcher, système, message d'erreur et dernières actions dans le launcher. Jamais ton mot de passe, tes jetons de connexion ni ton nom d'utilisateur.">
         <Toggle id="crash-reports" checked={settings.crashReports} onChange={(crashReports) => onChange({ crashReports })}>
           Envoyer les rapports à l'équipe Clover Games
         </Toggle>
