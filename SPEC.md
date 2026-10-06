@@ -4,6 +4,11 @@ Statut : brouillon du 2026-09-29, à valider. Décisions issues des réponses de
 
 ## 1. Promesse
 
+Identité du launcher (choix du 2026-10-05) : trèfle vert à quatre feuilles en pixel art,
+variante `05-classic-block-fusion`, source transparente `src/assets/brand/launcher.png`.
+Elle sert à la barre de titre, aux icônes des plateformes/installeurs et à la page `/launcher`
+du site ; l'identité générale du serveur reste distincte.
+
 Un clic sur « Jouer » installe et lance **exactement** la version de Minecraft que fait tourner Clover Games (26.2 aujourd'hui, 26.4 ensuite), avec Fabric et des mods utiles au quotidien choisis par le joueur, puis le connecte au serveur.
 
 Le launcher suit le serveur : la version, les mods et les modes sont décrits dans un **manifeste distant**. Passer le réseau en 26.4 revient à publier un nouveau manifeste, sans republier le launcher.
@@ -18,16 +23,25 @@ Le launcher suit le serveur : la version, les mods et les modes sont décrits da
 | Connexion | Microsoft uniquement, sans écran séparé : l'étape Comptes sert aussi de reconnexion quand plus aucun compte n'est enregistré. Bascule entre comptes en un clic. |
 | Version de Minecraft | La version qui sera lancée est écrite sous « Jouer » (« Minecraft 26.2 · Fabric », « · solo » si elle ne peut pas rejoindre le serveur). À droite du bouton, une dalle avec l'icône d'échange ouvre la liste, sur le modèle du Laby Launcher : la version du serveur en premier, les autres (solo, autres serveurs) avec l'avertissement « Ne peut pas rejoindre Clover Games ». Téléchargement à la demande, version choisie mémorisée. Quand le serveur change de version (manifeste), le launcher repasse d'office sur la nouvelle. |
 | Accueil | Bouton « Jouer » (Quick Play sur `play.clovergames.fr`, arrivée au Lobby). Aperçu 3D du skin du compte actif (façon Laby Launcher). Cartes des 6 modes avec le nombre de joueurs connectés ; un clic lance le jeu directement sur le mode (voir 3.6 bis). Dessous, « Tes autres serveurs » : les trois derniers serveurs hors Clover Games rejoints en jeu, en raccourcis Quick Play (voir 3.6 ter). Actualités du blog du site. Bandeau de maintenance. |
-| Mods | Deux onglets. **Catalogue Clover** : organisé (performance, visuel, confort), chaque mod activable, grisé s'il n'existe pas pour la version du serveur. **Mes mods** : mods ajoutés par le joueur (`.jar` ou import d'un autre launcher), non vérifiés, avec avertissement anticheat ; ceux faits pour une autre version ou un autre loader sont signalés et ne peuvent pas être activés, une mise à jour est proposée quand Modrinth en connaît une. |
-| Skins | Bibliothèque de skins (ajout d'un `.png`, skins par défaut du jeu), éditeur : texture, bras classiques ou fins, cape parmi celles du compte. Appliqué au compte Minecraft via l'API Mojang. Aperçu 3D en rotation horizontale seule. |
+| Mods | Deux onglets. **Catalogue Clover** : organisé (performance, visuel, confort), chaque mod activable, grisé s'il n'existe pas pour la version du serveur. **Mes mods** : mods ajoutés par le joueur (`.jar` ou import d'un autre launcher), non vérifiés, avec avertissement anticheat ; ceux faits pour une autre version ou un autre loader sont signalés et ne peuvent pas être activés, une mise à jour est proposée quand Modrinth en connaît une. Nom et logo viennent de Modrinth (sinon du `.jar`). **Recherche** Modrinth en une fenêtre, pour la version de l'instance choisie : mods Fabric, packs de ressources (`resourcepacks/`), shaders Iris (`shaderpacks/`, Iris activé dans le catalogue Clover ou installé dans une instance Fabric ; pas pour Vanilla), datapacks (dans le monde choisi) et modpacks Fabric (`.mrpack` : une nouvelle instance séparée, téléchargements limités aux hôtes autorisés par le format, chemins confinés à l'instance). Ouverte depuis Mes mods, les onglets de la page d'une instance et le bouton Modpacks des instances. |
+| Skins | Bibliothèque de skins (ajout d'un `.png`, neuf skins par défaut disponibles dès le premier démarrage, textures du client installé prioritaires), éditeur : texture, bras classiques ou fins, cape parmi celles du compte. Appliqué au compte Minecraft via l'API Mojang. Aperçu 3D en rotation horizontale seule. |
 | Paramètres | Six onglets. **Générales** : comptes, démarrer avec l'ordinateur, zone de notification, notifications bureau, mises à jour, canal bêta (staff). **Apparence** : taille de l'interface, animations, skin animé, derniers votes. **Jeu** : mémoire, comportement du launcher au lancement, plein écran, réglages recommandés, Java et arguments avancés. **Stockage** : espace utilisé par catégorie, nettoyage, dossier du jeu. **Intégrations** : Discord, Steam (ajout du launcher à la bibliothèque), rapports de plantage. **À propos** : versions, aide. |
 | Notifications | Cloche à gauche des paramètres, pastille du nombre de non lues. Réunit les notifications du site (achats, votes, annonces, succès) et les évènements du jeu (niveau gagné, succès, récompenses). Notification système quand la fenêtre est fermée. |
 | Installation | Java, Minecraft, Fabric et mods téléchargés, vérifiés (hash), reprise après coupure. |
 | Mises à jour | Launcher mis à jour automatiquement ; contenu du jeu resynchronisé à chaque lancement. |
-| Discord | (ID d'application public `857776082777276426`, embarqué dans `src-tauri/src/presence.rs`) Statut « Joue à Clover Games » via Discord Rich Presence : dans le launcher, puis en jeu avec la durée de la partie, logo Clover et boutons « Rejoindre le Discord » et « Site ». Désactivable dans les paramètres. Le mode en cours (BedWars, Practice…) arrive en V2 avec le mod Clover. |
+| Discord | (ID d’application public `1556616919925268480`, embarqué dans `src-tauri/src/presence.rs`) Statut « Joue à Clover Games » via Discord Rich Presence : dans le launcher, puis en jeu avec la durée de la partie, logo Clover, tête du compte actif en petite image (Minotar, pseudo au survol) et boutons « Rejoindre le Discord » et « Site ». Désactivable dans les paramètres. Le mode en cours (BedWars, Practice…) arrive en V2 avec le mod Clover. |
 | Console | Sortie du jeu en direct pendant la partie, sinon celle de la dernière partie (relue au démarrage du launcher). Filtres infos / avertissements / erreurs, recherche, copie des lignes affichées, « Effacer » (vide la console, pas le fichier journal), accès au dossier des journaux. Pendant la partie, « Voir la console » sous « Jouer » y mène. Le jeton Minecraft est masqué s'il apparaît dans la sortie. |
 | Plantages | Accord demandé au premier lancement. Plantage du launcher envoyé à Sentry si accepté. Plantage du jeu : écran dédié avec la fin de la console et sa copie. |
 | Langue | Français uniquement. |
+
+Zone de notification : clic gauche pour rouvrir le launcher ; menu compact avec Ouvrir,
+Jouer (instance sélectionnée), Instances, Paramètres et Quitter, séparés par groupes.
+Les raccourcis de l'application sont désactivés tant que la session n'est pas prête ; Jouer
+est également désactivé pendant une installation ou une partie. Le lancement utilise le même
+parcours que le bouton de l'accueil et conserve les protections Rust contre deux jeux simultanés.
+Sous Windows, ce menu reprend le fond Clover `#14120F` et des coins de 14 px dans une
+fenêtre transitoire transparente. Il se ferme par Échap, choix d'une action ou perte de focus.
+Les autres plateformes conservent le menu natif, également utilisé en repli sous Windows.
 
 ### V2 (après la bêta)
 
@@ -39,7 +53,48 @@ Le launcher suit le serveur : la version, les mods et les modes sont décrits da
 
 ### Hors périmètre
 
-Autres serveurs (au-delà des raccourcis vers ceux déjà rejoints), parties solo mises en avant, installations multiples façon Modrinth, comptes non premium.
+Comptes non premium, loaders autres que Fabric, import de modpacks.
+
+### Instances — première version (2026-10-05)
+
+- Une instance Clover intégrée suit toujours le manifeste signé ; des instances personnelles Clover,
+  Vanilla ou Fabric peuvent être créées. Versions personnelles : Minecraft 1.20 et suivantes,
+  ainsi que 1.8.9, 1.12.2, 1.16.5, 1.17.1, 1.18.2 et 1.19.4 ; métadonnées officielles Mojang,
+  snapshots masqués par défaut ; loaders compatibles issus de Fabric.
+- Vue Simple : une carte illustrée par famille (26.1, 1.21, 1.20…) ; un clic choisit l'instance
+  la plus récemment jouée de la famille, ou ouvre la création sur cette version. La barre du bas
+  montre l'instance choisie (variante à lancer si la famille en a plusieurs), Modifier et Jouer.
+  Vue Expert : toutes les instances avec recherche, tri, Jouer, dossier, modifier et retirer. Un
+  clic sur une instance la choisit et ouvre sa page : Aperçu (temps de jeu, parties, moyenne, plus
+  longue, barres du temps de jeu par jour ou par semaine sur 7 jours, 30 jours ou 6 mois comparé
+  à la période d'avant, fiche, dernières parties avec plantages, serveurs
+  rejoints), Mods (même écran que l'onglet Mods, sauf Vanilla), Mondes, Datapacks (ceux de tous
+  les mondes, avec leur monde), Packs de ressources, Shaders (sauf Vanilla) et Captures. Comme dans
+  « Mes mods », un pack publié sur Modrinth (reconnu par empreinte) prend le nom et le logo de son
+  projet ; sinon le nom du fichier et le logo `pack.png` du pack. Empreintes gardées en mémoire tant
+  que le fichier ne change pas. Packs de ressources, shaders et datapacks s'activent et se désactivent
+  (un pack désactivé est rangé dans le sous-dossier `.disabled/`, que Minecraft et Iris ignorent, sous
+  le même nom) ; packs, mondes (après confirmation, refusé pendant une partie Clover) et captures
+  partent à la corbeille du système, jamais supprimés directement.
+  Les parties sont enregistrées à la fermeture du jeu dans `play-history.json` (1000 au plus) ;
+  les images (icônes de monde, captures) passent par le protocole `asset`, limité aux fichiers
+  listés. Vue mémorisée. Création et modification passent par un même panneau, à droite de l’écran (non modal) :
+  type, version (groupée par famille, Fabric le plus récent compatible choisi d'office), nom
+  facultatif, dossier séparé, mémoire. Le sélecteur à droite de « Jouer » sur l'accueil liste les
+  instances, en crée une nouvelle et mène à l'écran. Images embarquées du launcher officiel Mojang, panoramas client pour
+  1.8 et 1.12. Arguments anciens et archives natives LWJGL pris en charge ; runtime Java dicté
+  par Mojang. Les runtimes anciens ne sont pas fournis par Mojang pour macOS ARM natif.
+- Sélection mémorisée ; « Jouer » de l'accueil lance toujours l'instance choisie.
+- Dossier de jeu partagé `game/` par défaut ; dossier `instances/<id>/game/` en option. Aucun
+  déplacement automatique : changer ce choix retrouve ou crée le dossier correspondant.
+  Java, assets et bibliothèques restent mutualisés. La sélection/source des mods est propre à
+  chaque instance et resynchronisée avant le lancement ; Vanilla ne charge aucun mod.
+- Un seul jeu lancé depuis Clover à la fois : les installations et la synchronisation ne peuvent
+  pas modifier un jeu encore ouvert, y compris après fermeture/réouverture du launcher.
+- Retirer une instance retire uniquement son entrée ; ses mondes et autres fichiers restent sur
+  disque. L'instance Clover intégrée ne peut pas être retirée. Aucun jeton ne passe à l'interface.
+- Les instances personnelles ouvrent le menu
+  Minecraft ; les raccourcis de modes sur l'accueil lancent toujours Clover.
 
 ## 3. Architecture
 
@@ -119,8 +174,8 @@ En développement, tant que le CDN n'existe pas, `CLOVER_MANIFEST_DIR=manifest/d
 - **Java** : le composant indiqué par le JSON de version (`javaVersion.component`, Java 25 pour 26.x) est pris dans le manifeste des runtimes Mojang, avec Adoptium en secours pour une plateforme absente.
 - **Minecraft** : JSON de version, `client.jar`, bibliothèques filtrées par règles OS/architecture, index et objets d'assets. Hash vérifié, téléchargements parallèles, reprise.
 - **Fabric** : profil `meta.fabricmc.net/v2/versions/loader/<mc>/<loader>/profile/json`, fusionné avec le JSON vanilla.
-- **Mods** : depuis le CDN Modrinth (URL + sha512 figés dans le manifeste). Les jars absents du manifeste sont retirés de `mods/`.
-- **Lancement** : arguments JVM et jeu reconstruits, `-Xmx` selon le réglage RAM, `--quickPlayMultiplayer play.clovergames.fr`.
+- **Mods** : depuis le CDN Modrinth (URL + sha512 figés dans le manifeste). Les jars absents du manifeste sont retirés de `mods/`. Dépendances obligatoires : déclarées par `requires` dans le manifeste pour le catalogue ; résolues sur Modrinth pour « Mes mods » (recherche, `.jar` ajouté à la main, import), sauf si la sélection Clover les fournit déjà.
+- **Lancement** : arguments JVM et jeu reconstruits, `-Xmx` selon le réglage RAM, `--quickPlayMultiplayer play.clovergames.fr`. Sous Windows, titre de la fenêtre `Minecraft <version du jeu> | Clover <version du launcher>`, appliqué via l'API native, sans mod. Un mode interne sans interface du même exécutable suit uniquement la fenêtre GLFW du processus Java lancé (PID et date de création vérifiés), réapplique le titre s'il change et s'arrête avec le jeu ; il reste actif si le launcher se ferme. macOS et Linux gardent le titre fourni par Minecraft.
 - **RAM automatique** : quart de la mémoire totale, borné entre 2 et 6 Go.
 
 ### 3.5 Catalogue de mods V1
@@ -136,11 +191,16 @@ Chaque ajout est testé contre Vulcan en bêta : un mod qui provoque des faux po
 
 ### 3.5 bis Import depuis les autres launchers
 
-Détection au premier lancement (et depuis les paramètres) des installations du launcher officiel (`.minecraft`, `launcher_profiles.json`), de Modrinth App, de Prism Launcher / MultiMC et de CurseForge. Emplacements exacts à vérifier sur les trois systèmes.
+Détection au premier lancement (et depuis les paramètres) des installations du launcher officiel (`.minecraft`, `launcher_profiles.json`), de Modrinth App, de Prism Launcher / MultiMC et de CurseForge (`src-tauri/src/import.rs`).
+
+- **Emplacements** : `.minecraft` dans `%APPDATA%` (Windows), `~/Library/Application Support/minecraft` (macOS), `~/.minecraft` (Linux), plus le `gameDir` de chaque profil de `launcher_profiles.json` ; `ModrinthApp/profiles/*` (et l'ancien `com.modrinth.theseus`) dans le dossier de données ; `PrismLauncher/instances/*` (ou `InstanceDir` de `prismlauncher.cfg`, Flatpak compris) et `multimc/instances/*` ; `~/curseforge/minecraft/Instances/*` et `~/Documents/curseforge/…`. Vérifiés sur Windows (officiel, Modrinth App) ; macOS et Linux à confirmer en bêta.
+- **Version affichée** : profil officiel le plus récent, `mmc-pack.json` (Prism), `minecraftinstance.json` (CurseForge) ; pour Modrinth App, première ligne « Loading Minecraft … » du journal, car `app.db` contient aussi les comptes et n'est jamais ouvert.
+- **Destination** : dossier de jeu de l'instance Clover intégrée. Une entrée déjà présente (même nom) est gardée ; `options.txt` remplacé est sauvegardé en `options.txt.bak` ; `servers.dat` est fusionné (adresses nouvelles seulement, entrées masquées ignorées). Copie entrée par entrée sous un nom provisoire puis renommée : un import interrompu se relance sans doublon. Refusé pendant une partie lancée par Clover.
 
 - **Copié, jamais déplacé** : les autres launchers ne sont pas modifiés.
-- **Repris au choix** : réglages et touches (`options.txt`), serveurs enregistrés (`servers.dat`), packs de ressources, shaders, captures d'écran, mondes solo. Mondes et captures décochés par défaut (volumineux).
-- **Mods** : jamais copiés. Leurs empreintes sont comparées au catalogue (API Modrinth `version_files`) ; les équivalents du catalogue sont proposés à l'activation, les autres sont listés comme non importés.
+- **Repris au choix** : réglages et touches (`options.txt`, avec les réglages des mods de `config/`), serveurs enregistrés (`servers.dat`), packs de ressources, shaders, captures d'écran, mondes solo. Mondes et captures décochés par défaut (volumineux).
+- **Mods** (décision de Kaysuto, 2026-10-06) : empreintes comparées au catalogue (API Modrinth `version_files`) ; les équivalents du catalogue sont activés plutôt que copiés. Les autres mods Fabric sont copiés dans « Mes mods » de l'instance Clover, activés comme un mod ajouté à la main ; un mod déjà présent (même identifiant Fabric) est gardé. Les mods Forge, NeoForge ou Quilt sont listés comme non repris. Leurs dépendances obligatoires (d'après leur version Modrinth) absentes de « Mes mods » et de la sélection Clover sont téléchargées pour la version du serveur ; une dépendance sans version compatible est signalée.
+- **Recherche** : animée d'après les évènements réels du cœur Rust (`import-scan` : installations annoncées une à une, puis reconnaissance des mods). Le résultat est gardé pour la session : une réouverture l'affiche aussitôt et le rafraîchit ; seuls les mods ajoutés ou modifiés (taille, date) sont relus et seules les empreintes inconnues partent à Modrinth.
 - **Versions** : une instance plus ancienne est acceptée ; Minecraft convertit réglages et mondes à l'ouverture.
 - **Sécurité** : ne jamais lire les jetons ou comptes enregistrés par un autre launcher. Chaque compte passe par la connexion Microsoft du Clover Launcher.
 
@@ -156,6 +216,8 @@ Détection au premier lancement (et depuis les paramètres) des installations du
 Chaque réponse porte `schema: 1` ; ne changer la forme qu'en incrémentant ce numéro, les anciens launchers lisent ces routes longtemps. Le cœur Rust les lit toutes les 60 s (`site.rs`, commande `site_feed`) ; `CLOVER_SITE_URL` remplace `https://clovergames.fr` en développement.
 
 **Joueurs par mode** : le cron d'analytique du site interroge déjà chaque serveur en RCON toutes les 5 min (`analytics_servers`, dont le `slug` suit `storage.server-name` et les `modes[].id` du manifeste). Pas de table côté plugin (CLO-270 annulé). `online`/`players` valent `null` quand l'échantillon a plus de 20 min : la carte n'affiche alors pas de compteur.
+
+Le compteur global de l'accueil additionne les joueurs des modes du manifeste à partir de ces mêmes données (un mode hors ligne contribue zéro). Si un mode manque ou si sa mesure est inconnue, le total est masqué. Le ping de `server.host` indique uniquement la disponibilité du serveur : son compteur peut ne couvrir que le Lobby.
 
 ### 3.6 bis Quick Play par mode
 

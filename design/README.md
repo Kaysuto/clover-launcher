@@ -27,12 +27,14 @@ images viendront du champ `image` des modes du manifeste.
   Montserrat pour le texte (celle du site), Monocraft pour les chiffres du jeu (joueurs, versions,
   mémoire).
 - **Pas de gros logo** : l'accueil met en avant l'actualité à la une (titre, résumé, lien), le
-  monogramme reste dans la barre de titre.
+  trèfle du launcher reste dans la barre de titre.
 - **Fond du hero repris du site** (`src/components/Backdrop.tsx`, d'après `PageHero.tsx`, teinte
   « forest ») : aplat vert en dégradé, blocs de feuillage pixelisés, lueur. Bord bas droit, sans
   diagonale. Jamais de photo ni de capture derrière l'interface ; les images d'articles ne servent
   qu'en vignette dans la liste des actualités.
-- **Fenêtre** : coins arrondis (14 px), sauf une fois agrandie.
+- **Fenêtre** : coins arrondis (14 px), sauf une fois agrandie. Redimensionnable par ses bords
+  (`ResizeHandles`, la WebView les couvre) ; taille, position et état agrandi retrouvés au
+  lancement suivant (`tauri-plugin-window-state`).
 - **Derniers votes** : à gauche du compte, une pastille fait défiler « Pseudo a voté pour le
   serveur » (tête du joueur) ; un clic ouvre la page de vote du site.
 - **Signature** : le bouton « Jouer », dalle dorée en relief taillée comme les lettres du logo,

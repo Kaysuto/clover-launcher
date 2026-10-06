@@ -4,6 +4,12 @@ Launcher officiel de Clover Games pour Windows, macOS et Linux : connexion Micro
 de la version de Minecraft que fait tourner le réseau (Java, Fabric, mods choisis) et connexion
 directe au serveur. Spécification : [SPEC.md](SPEC.md). Suivi : épopée Linear CLO-266.
 
+L'écran **Instances** propose les vues Simple (familles de versions illustrées, correctif au
+choix) et Expert (instances et réglages). Les instances personnelles Clover, Vanilla et Fabric
+sont enregistrées : dossier de jeu partagé par défaut, séparé au choix, mods propres à chaque
+instance. Retirer une instance conserve ses fichiers. Les versions Clover suivent le manifeste
+signé ; Vanilla et Fabric ouvrent le menu Minecraft.
+
 ## Prérequis
 
 - Node.js 24 et npm
@@ -16,6 +22,7 @@ directe au serveur. Spécification : [SPEC.md](SPEC.md). Suivi : épopée Linear
 npm install
 npm run tauri dev        # launcher en développement (rechargement à chaud)
 npm run tauri build      # installeurs de la plateforme courante
+npm run install:local    # Windows : met à jour le launcher installé sur ce poste et le relance
 cd src-tauri && cargo test && cargo clippy --all-targets
 npx tsc --noEmit
 ```
@@ -62,7 +69,10 @@ TAURI_SIGNING_PRIVATE_KEY="../Sécurités/clover-launcher-updater.key" TAURI_SIG
 | `src/` | Interface React + TypeScript |
 | `src-tauri/src/auth.rs` | Connexion Microsoft → Xbox → Minecraft, jetons dans le coffre du système |
 | `src-tauri/src/game/` | Manifeste, installation de Java/Minecraft/Fabric/mods, lancement |
+| `src-tauri/src/instances.rs` | Instances enregistrées, dossiers et catalogues officiels de versions |
 | `manifest/` | Sources du manifeste distant et script de résolution/signature |
 
 Les données du joueur vivent dans `~/.cloverlauncher/` (jeu dans `game/`, sortie du jeu dans
-`logs/game-output.log`).
+`logs/game-output.log`). Les instances personnelles conservent leurs sources de mods et journaux
+dans `instances/<id>/` ; leur dossier `game/` y est créé si la séparation est activée. Java,
+bibliothèques et assets restent partagés.
