@@ -75,6 +75,8 @@ export const api = {
   setTrayState: (available: boolean, canPlay: boolean) => invoke<void>("set_tray_state", { available, canPlay }),
   listInstances: () => invoke<InstanceEntry[]>("list_instances"),
   instanceVersions: () => invoke<AvailableVersion[]>("instance_versions"),
+  /** Octets à télécharger avant de jouer à cette version (0 si déjà installée). */
+  downloadSize: (minecraft: string) => invoke<number>("download_size", { minecraft }),
   fabricLoaders: (minecraft: string) => invoke<string[]>("fabric_loaders", { minecraft }),
   saveInstance: (id: string | null, input: InstanceInput) => invoke<string>("save_instance", { id, input }),
   selectInstance: (id: string) => invoke<void>("select_instance", { id }),

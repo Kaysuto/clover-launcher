@@ -109,6 +109,9 @@ pub struct AssetIndexRef {
     pub id: String,
     pub url: String,
     pub sha1: String,
+    /// Taille de tous les objets de l'index, pour annoncer le téléchargement.
+    #[serde(default, rename = "totalSize")]
+    pub total_size: u64,
     pub size: u64,
 }
 

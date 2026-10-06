@@ -80,6 +80,21 @@ fn executable(runtime: &Path) -> PathBuf {
     }
 }
 
+/// Taille du runtime `component` à télécharger ; 0 s'il est déjà là.
+pub async fn download_size(http: &reqwest::Client, runtimes: &Path, component: &str) -> Result<u64> {
+    if runtimes.join(component).is_dir() {
+        return Ok(0);
+    }
+    let platform = platform().ok_or_else(|| GameError::UnsupportedPlatform(format!("{} {}", std::env::consts::OS, std::env::consts::ARCH)))?;
+    let all: HashMap<String, HashMap<String, Vec<RuntimeEntry>>> = http.get(RUNTIMES_URL).send().await?.error_for_status()?.json().await?;
+    let Some(entry) = all.get(platform).and_then(|components| components.get(component)).and_then(|entries| entries.first()) else { return Ok(0) };
+    let manifest: RuntimeManifest = http.get(&entry.manifest.url).send().await?.error_for_status()?.json().await?;
+    Ok(manifest.files.values().map(|file| match file {
+        RuntimeFile::File { downloads, .. } => downloads.raw.size,
+        _ => 0,
+    }).sum())
+}
+
 /// Installe (ou complète) le runtime et renvoie le chemin de l'exécutable Java.
 pub async fn install(
     http: &reqwest::Client,

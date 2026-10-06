@@ -212,6 +212,38 @@ async fn vanilla_json(http: &reqwest::Client, paths: &Paths, id: &str) -> Result
     read_json(&path).await
 }
 
+/// Octets à télécharger pour installer `minecraft` : client, bibliothèques, ressources et Java
+/// manquants. Rien n'est écrit : le JSON d'une version absente est lu en ligne. Les ressources
+/// partagées entre versions sont comptées entières si l'index manque : un majorant. Fabric (un
+/// chargeur et quelques bibliothèques, sans taille publiée) n'est pas compté.
+pub async fn download_size(http: &reqwest::Client, paths: &Paths, minecraft: &str) -> Result<u64> {
+    crate::instances::validate_version_id(minecraft)?;
+    let cached = paths.versions.join(minecraft).join(format!("{minecraft}.json"));
+    let vanilla: VersionJson = if cached.is_file() {
+        read_json(&cached).await?
+    } else {
+        let manifest: VersionManifest = http.get(VERSION_MANIFEST_URL).send().await?.error_for_status()?.json().await?;
+        let entry = manifest.versions.into_iter().find(|entry| entry.id == minecraft).ok_or_else(|| GameError::InvalidVersion(format!("version {minecraft} inconnue de Mojang")))?;
+        http.get(entry.url).send().await?.error_for_status()?.json().await?
+    };
+    let missing = |path: PathBuf, size: Option<u64>| if path.is_file() { 0 } else { size.unwrap_or(0) };
+    let mut total = 0;
+    if let Some(client) = vanilla.downloads.as_ref().map(|downloads| &downloads.client) {
+        total += missing(paths.versions.join(minecraft).join(format!("{minecraft}.jar")), client.size);
+    }
+    for library in vanilla.libraries.iter().filter(|library| allowed(&library.rules, &[])) {
+        for resolved in [library.resolve(), library.native()].into_iter().flatten() {
+            total += missing(paths.libraries.join(&resolved.path), resolved.size);
+        }
+    }
+    if let Some(index) = &vanilla.asset_index {
+        total += missing(paths.assets.join("indexes").join(format!("{}.json", index.id)), Some(index.total_size));
+    }
+    let component = vanilla.java_version.as_ref().map_or("java-runtime-epsilon", |java| java.component.as_str());
+    total += java::download_size(http, &paths.runtimes, component).await?;
+    Ok(total)
+}
+
 async fn fabric_json(http: &reqwest::Client, paths: &Paths, minecraft: &str, loader: &str) -> Result<VersionJson> {
     let id = format!("fabric-loader-{loader}-{minecraft}");
     let path = paths.versions.join(&id).join(format!("{id}.json"));
@@ -252,6 +284,22 @@ fn extract_natives(archives: &[(PathBuf, Vec<String>)], dir: &Path) -> Result<()
 #[cfg(test)]
 mod instance_tests {
     use super::*;
+
+    /// Réseau : taille annoncée d'une version absente, sans rien écrire ; puis celle de la 26.2
+    /// installée sur le poste (lancer avec `--ignored`).
+    #[tokio::test]
+    #[ignore]
+    async fn announces_download_size() {
+        let root = std::env::temp_dir().join(format!("clover-size-{}", rand::random::<u64>()));
+        let paths = Paths::from_root(root.clone());
+        let size = download_size(&crate::game::download::client(), &paths, "1.20.1").await.unwrap();
+        println!("1.20.1 sur un poste neuf : {} Mo", size / 1_000_000);
+        assert!(size > 300_000_000 && size < 2_000_000_000);
+        assert!(!root.exists(), "rien d'écrit");
+        let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap();
+        let installed = Paths::from_root(std::path::PathBuf::from(home).join(".cloverlauncher"));
+        println!("26.2 installée : {} octets", download_size(&crate::game::download::client(), &installed, "26.2").await.unwrap());
+    }
 
     #[test]
     fn native_extraction_excludes_metadata_and_refuses_traversal() {

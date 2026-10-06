@@ -879,6 +879,7 @@ pub fn run() {
             instances::trash_content,
             history::play_history,
             instances::instance_versions,
+            instances::download_size,
             instances::fabric_loaders,
             instances::save_instance,
             instances::select_instance,

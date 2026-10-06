@@ -12,7 +12,13 @@ import { versionImage } from "@/lib/version-art";
 import type { AvailableVersion, InstanceInput, InstanceKind } from "@/types";
 
 export type InstanceDraft = { id: string | null; input: InstanceInput };
-type Services = Pick<typeof api, "instanceVersions" | "fabricLoaders">;
+type Services = Pick<typeof api, "instanceVersions" | "fabricLoaders" | "downloadSize">;
+
+const megabytes = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 });
+/** « 825 Mo », « 1,2 Go ». */
+function formatDownload(bytes: number): string {
+  return bytes >= 1e9 ? `${megabytes.format(bytes / 1e9)} Go` : `${Math.max(1, Math.round(bytes / 1e6))} Mo`;
+}
 
 const MEMORY = [2, 3, 4, 6, 8, 12, 16];
 
@@ -58,6 +64,8 @@ function Form({ draft, onClose, onSave, services }: { draft: InstanceDraft; onCl
   const [loaders, setLoaders] = useState<{ minecraft: string; list: string[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Taille à télécharger de la version choisie ; `null` pendant le calcul. */
+  const [size, setSize] = useState<{ minecraft: string; bytes: number | null } | null>(null);
   const patch = (next: Partial<InstanceInput>) => setInput((current) => ({ ...current, ...next }));
 
   useEffect(() => {
@@ -74,6 +82,21 @@ function Form({ draft, onClose, onSave, services }: { draft: InstanceDraft; onCl
       cancelled = true;
     };
   }, [services]);
+
+  // Téléchargement annoncé avant la création : client, bibliothèques, ressources et Java manquants.
+  useEffect(() => {
+    const minecraft = input.minecraft;
+    if (!minecraft || input.kind === "clover") return;
+    let cancelled = false;
+    setSize({ minecraft, bytes: null });
+    services
+      .downloadSize(minecraft)
+      .then((bytes) => !cancelled && setSize({ minecraft, bytes }))
+      .catch(() => !cancelled && setSize(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [input.kind, input.minecraft, services]);
 
   // Fabric : le loader le plus récent compatible, sauf si celui de l'instance l'est encore.
   useEffect(() => {
@@ -185,6 +208,11 @@ function Form({ draft, onClose, onSave, services }: { draft: InstanceDraft; onCl
               </SelectContent>
             </Select>
           </div>
+          {size?.minecraft === input.minecraft && (
+            <p className="text-[11px] text-muted-foreground" aria-live="polite">
+              {size.bytes === null ? "Calcul du téléchargement…" : size.bytes === 0 ? "Déjà téléchargée : prête à lancer." : `Environ ${formatDownload(size.bytes)} à télécharger au premier lancement.`}
+            </p>
+          )}
           {input.kind === "fabric" && (
             <p className="text-[11px] text-muted-foreground">
               {loaders?.minecraft !== input.minecraft ? "Recherche de Fabric…" : fabricReady ? <>Fabric <span className="font-pixel">{input.loader}</span>, la dernière version compatible.</> : "Fabric n'existe pas pour cette version."}

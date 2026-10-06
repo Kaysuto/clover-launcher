@@ -317,6 +317,12 @@ pub async fn list_instances(
         .collect()
 }
 
+/// Octets à télécharger avant de jouer à `minecraft` (annoncés à la création d'une instance).
+#[tauri::command]
+pub async fn download_size(minecraft: String, app: AppHandle) -> game::Result<u64> {
+    game::install::download_size(&game::download::client(), &Paths::new(&app)?, &minecraft).await
+}
+
 #[tauri::command]
 pub async fn instance_versions(state: State<'_, AppState>) -> game::Result<Vec<GameVersion>> {
     versions(&state.root).await

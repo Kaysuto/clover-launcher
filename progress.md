@@ -276,3 +276,8 @@
 - Launcher : `notifications.rs` (challenge, `join` Mojang, jeton en mémoire, relance sur 401, liens limités au site ou https), cloche branchée, compte non lié → invitation à lier, bulles du système, réglage « notifications sur le bureau » réaffiché.
 - Vérifié de bout en bout avec le site lancé en local (port 3123) : `join` Mojang réel du compte Kaysuto, `hasJoined` confirmé, jeton de 122 caractères, notifications lues (compte lié, aucune notification) ; 401 sans jeton et avec un jeton falsifié. Rien marqué lu. Pas encore en production : le site n'est pas déployé.
 - Reste : évènements du jeu (plugin), non commencés.
+
+### CLO-286 — taille annoncée
+- `install::download_size` (client, bibliothèques et natives absentes, `totalSize` de l'index d'assets s'il manque, runtime Java manquant d'après le manifeste des runtimes Mojang ; rien d'écrit sur le disque), commande `download_size`, affichage dans le panneau de création d'instance (« Environ 825 Mo à télécharger au premier lancement », « Déjà téléchargée »).
+- Vérifié en réel : 1.20.1 sur un poste neuf → 825 Mo, dossier de test non créé ; 26.2 installée → 0. Fabric non compté (chargeur et quelques bibliothèques sans taille publiée).
+- Reste de CLO-286 : catalogue Clover pour d'autres versions que celle du serveur (`alsoSupported`), non commencé.

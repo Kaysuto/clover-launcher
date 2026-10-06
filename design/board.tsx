@@ -673,6 +673,7 @@ function SettingsBoard({ initial = "general", steam = "ready", from }: { initial
 }
 
 const boardServices = {
+  downloadSize: async (minecraft: string) => (minecraft === "26.2" ? 0 : 825_000_000),
   setContentEnabled: async () => {},
   trashContent: async () => {},
   instanceVersions: async () => ["26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11", "1.21.10", "1.21.4", "1.21.1", "1.20.6", "1.20.1", "1.19.4", "1.18.2", "1.17.1", "1.16.5", "1.12.2", "1.8.9", "26.4-snapshot-1"].map((id) => ({ id, snapshot: id.includes("snapshot"), released: "" })),
