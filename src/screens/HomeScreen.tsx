@@ -1,4 +1,4 @@
-import { ArrowUpRight, Newspaper } from "lucide-react";
+import { ArrowUpRight, Newspaper, Wrench } from "lucide-react";
 
 import { HeroBackdrop } from "@/components/Backdrop";
 import { ModeGrid } from "@/components/ModeGrid";
@@ -39,18 +39,26 @@ type Props = {
   onPlayServer: (address: string) => void;
   /** Du plus récent au plus ancien : le premier article passe à la une. */
   news: NewsItem[];
+  /** Maintenance annoncée sur le site : bandeau au-dessus de l'accueil. */
+  maintenance?: boolean;
   onOpenLink: (url: string) => void;
 };
 
 const date = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
 
-export function HomeScreen({ look, enabledMods, onManageMods, onOpenConsole, play, onPlay, instances, selectedInstance, onSelectInstance, onCreateInstance, onManageInstances, versionOpen, server, animateSkin, modes, destination, otherServers, onPlayServer, news, onOpenLink }: Props) {
+export function HomeScreen({ look, enabledMods, onManageMods, onOpenConsole, play, onPlay, instances, selectedInstance, onSelectInstance, onCreateInstance, onManageInstances, versionOpen, server, animateSkin, modes, destination, otherServers, onPlayServer, news, maintenance = false, onOpenLink }: Props) {
   const [featured, ...others] = news;
   const current = instances.find((entry) => entry.id === selectedInstance) ?? instances[0];
   const destinationName = modes.find((mode) => mode.id === destination)?.name ?? "Lobby";
 
   return (
     <main className="flex min-h-0 flex-1 flex-col">
+      {maintenance && (
+        <p role="status" className="flex shrink-0 items-center gap-2.5 border-b border-[var(--mc-outline)] bg-accent px-12 py-2 text-[13px] font-semibold text-accent-foreground">
+          <Wrench className="size-4 shrink-0" aria-hidden />
+          Maintenance en cours : les serveurs peuvent être indisponibles ou redémarrer. Suis les annonces sur le Discord.
+        </p>
+      )}
       <section className="relative flex h-[clamp(290px,42vh,440px)] shrink-0 items-end overflow-hidden text-white">
         <HeroBackdrop />
 

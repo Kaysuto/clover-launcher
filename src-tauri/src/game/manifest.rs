@@ -14,7 +14,10 @@ use serde::{Deserialize, Serialize};
 
 use super::{GameError, Result};
 
-const MANIFEST_URL: &str = "https://cdn.clovergames.fr/launcher/prod/manifest.json";
+/// Canaux publiés sur le CDN : `launcher/<canal>/manifest.json`.
+const CDN: &str = "https://cdn.clovergames.fr/launcher";
+pub const PROD: &str = "prod";
+pub const BETA: &str = "beta";
 const MANIFEST_PUBLIC_KEY: &str = "X/zKDL8dnvMWXTyzxZDeP5cPF+6uF9JWdvgNeYpJB6w=";
 const SUPPORTED_SCHEMA: u32 = 1;
 
@@ -33,7 +36,11 @@ pub struct Manifest {
     pub server: ServerTarget,
     pub modes: Vec<Mode>,
     pub mods: Vec<Mod>,
+    /// Comptes Minecraft (UUID) qui voient le réglage « Canal bêta ». Absent des anciens manifestes.
+    #[serde(default)]
+    pub beta_testers: Vec<String>,
 }
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MinecraftTarget {
@@ -131,10 +138,22 @@ impl Manifest {
     }
 }
 
-/// Télécharge le manifeste, le vérifie et le garde en cache. Hors ligne, se replie sur le cache.
-pub async fn load(http: &reqwest::Client, cache_dir: &Path) -> Result<Manifest> {
+/// Télécharge le manifeste du canal (`PROD` ou `BETA`), le vérifie et le garde en cache. Hors ligne,
+/// se replie sur le cache. Le canal bêta sans manifeste publié suit celui de prod. Chaque canal a
+/// son cache (`<cache>/beta/`) : leurs numéros anti-rejeu ne se comparent pas.
+pub async fn load(http: &reqwest::Client, cache_dir: &Path, channel: &str) -> Result<Manifest> {
+    if channel == BETA {
+        // Ni publié ni en cache : celui de prod.
+        if let Ok(manifest) = load_channel(http, &cache_dir.join(BETA), BETA).await {
+            return Ok(manifest);
+        }
+    }
+    load_channel(http, cache_dir, PROD).await
+}
+
+async fn load_channel(http: &reqwest::Client, cache_dir: &Path, channel: &str) -> Result<Manifest> {
     let cached = read_cached(cache_dir).await;
-    let fetched = match fetch(http).await {
+    let fetched = match fetch(http, channel).await {
         Ok((bytes, signature)) => Some(verify(&bytes, &signature).map(|manifest| (bytes, signature, manifest))),
         Err(error) => {
             eprintln!("[manifest] téléchargement impossible, repli sur le cache : {error}");
@@ -169,17 +188,27 @@ pub fn check_launcher_version(manifest: &Manifest) -> Result<()> {
     Ok(())
 }
 
-async fn fetch(http: &reqwest::Client) -> Result<(Vec<u8>, String)> {
+async fn fetch(http: &reqwest::Client, channel: &str) -> Result<(Vec<u8>, String)> {
     if let Some(dir) = std::env::var_os(LOCAL_OVERRIDE_ENV) {
         let dir = Path::new(&dir);
         let bytes = tokio::fs::read(dir.join("manifest.json")).await?;
         let signature = tokio::fs::read_to_string(dir.join("manifest.json.sig")).await?;
         return Ok((bytes, signature));
     }
-    let bytes = http.get(MANIFEST_URL).send().await?.error_for_status()?.bytes().await?.to_vec();
-    let signature =
-        http.get(format!("{MANIFEST_URL}.sig")).send().await?.error_for_status()?.text().await?;
+    let url = format!("{CDN}/{channel}/manifest.json");
+    let bytes = http.get(&url).send().await?.error_for_status()?.bytes().await?.to_vec();
+    let signature = http.get(format!("{url}.sig")).send().await?.error_for_status()?.text().await?;
     Ok((bytes, signature))
+}
+
+/// Paquets de mise à jour du launcher pour `channel` : le canal bêta se replie sur prod tant qu'il
+/// n'a pas publié de version.
+pub fn update_endpoints(channel: &str) -> Vec<String> {
+    let mut channels = vec![PROD];
+    if channel == BETA {
+        channels.insert(0, BETA);
+    }
+    channels.into_iter().map(|channel| format!("{CDN}/{channel}/latest.json")).collect()
 }
 
 fn verify(bytes: &[u8], signature: &str) -> Result<Manifest> {
@@ -239,6 +268,26 @@ fn version_tuple(version: &str) -> (u64, u64, u64) {
 mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
+
+    #[test]
+    fn beta_updates_fall_back_to_prod() {
+        assert_eq!(update_endpoints(PROD), ["https://cdn.clovergames.fr/launcher/prod/latest.json"]);
+        assert_eq!(update_endpoints(BETA), ["https://cdn.clovergames.fr/launcher/beta/latest.json", "https://cdn.clovergames.fr/launcher/prod/latest.json"]);
+    }
+
+    /// Réseau : sans manifeste bêta publié, le canal bêta reçoit celui de prod, en cache à part.
+    #[tokio::test]
+    #[ignore]
+    async fn beta_channel_reads_prod_until_published() {
+        let dir = std::env::temp_dir().join(format!("clover-channel-{}", rand::random::<u64>()));
+        let http = crate::game::download::client();
+        let prod = load(&http, &dir, PROD).await.unwrap();
+        let beta = load(&http, &dir, BETA).await.unwrap();
+        println!("prod n°{} beta n°{} testeurs {:?}", prod.serial, beta.serial, beta.beta_testers);
+        assert_eq!(prod.serial, beta.serial);
+        assert!(!dir.join(BETA).join("manifest.json").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     const MANIFEST: &str = r#"{
         "schema": 1, "serial": 10, "minLauncherVersion": "0.1.0",

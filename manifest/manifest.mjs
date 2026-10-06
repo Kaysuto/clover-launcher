@@ -132,6 +132,8 @@ async function build(channel) {
     server: { host: source.server },
     modes: source.modes.map((mode) => ({ image: null, ...mode })),
     mods: await resolveMods(source.mods, source.minecraft),
+    // Comptes Minecraft (UUID) qui voient le réglage « Canal bêta » du launcher.
+    betaTesters: source.betaTesters ?? [],
   };
 
   const bytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, "utf8");

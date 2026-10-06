@@ -95,6 +95,9 @@ pub struct Stored {
     pub expert_instances: bool,
     pub last_launched_instance: Option<String>,
     pub clover_last_played: Option<u64>,
+    /// Version de Minecraft du serveur déjà annoncée au joueur : un changement du manifeste
+    /// (26.2 → 26.4) est signalé une fois.
+    pub server_minecraft: Option<String>,
 }
 
 impl Stored {

@@ -9,8 +9,8 @@
 //     - latest.json : lu par l'updater Tauri du launcher (paquets de mise à jour signés) ;
 //     - downloads.json : lu par la page /launcher du site (installeurs, contrat de SPEC.md §3.7).
 //
-// Les paquets vont dans https://cdn.clovergames.fr/launcher/prod/<version>/, les deux index à la
-// racine du canal, envoyés après les paquets.
+// Les paquets vont dans https://cdn.clovergames.fr/launcher/<canal>/<version>/, les deux index à la
+// racine du canal, envoyés après les paquets. Canal : CLOVER_CHANNEL (`prod` par défaut, `beta`).
 
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
@@ -18,7 +18,9 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const CDN = "https://cdn.clovergames.fr/launcher/prod";
+const CHANNEL = process.env.CLOVER_CHANNEL ?? "prod";
+if (!["prod", "beta"].includes(CHANNEL)) throw new Error(`Canal inconnu : ${CHANNEL}.`);
+const CDN = `https://cdn.clovergames.fr/launcher/${CHANNEL}`;
 
 /**
  * Paquets attendus. `platforms` : clés de latest.json servies par ce paquet de mise à jour (signé) ;

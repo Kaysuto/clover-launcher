@@ -1,5 +1,6 @@
-# Publication du manifeste prod, à lancer à la main (Actions › Manifeste › Run workflow) après une
-# modification de manifest/prod.json ou pour reprendre les dernières versions des mods sur Modrinth.
+# Publication du manifeste d'un canal, à lancer à la main (Actions › Manifeste › Run workflow) après
+# une modification de manifest/<canal>.json ou pour reprendre les dernières versions des mods sur
+# Modrinth. Canal `beta` : manifest/beta.json, lu par les testeurs du canal bêta (sinon prod).
 # Le journal liste la version retenue pour chaque mod : à relire avant de relancer les joueurs.
 #
 # Secrets : CLOVER_MANIFEST_KEY (contenu de Sécurités/clover-launcher-manifest.pem),
@@ -8,6 +9,12 @@ name: Manifeste
 
 on:
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Canal
+        type: choice
+        options: [prod, beta]
+        default: prod
 
 permissions:
   contents: read
@@ -32,7 +39,7 @@ jobs:
           CLOVER_MANIFEST_KEY: ${{ runner.temp }}/manifest.pem
         run: |
           (umask 077 && printf '%s\n' "$MANIFEST_KEY" > "$CLOVER_MANIFEST_KEY")
-          node manifest/manifest.mjs build prod
+          node manifest/manifest.mjs build "${{ inputs.channel }}"
           rm "$CLOVER_MANIFEST_KEY"
 
       - name: Envoi sur R2
@@ -46,5 +53,5 @@ jobs:
         run: |
           endpoint="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
           for file in manifest.json manifest.json.sig; do
-            aws s3 cp "manifest/dist/prod/$file" "s3://clover-launcher/launcher/prod/$file" --cache-control no-cache --endpoint-url "$endpoint"
+            aws s3 cp "manifest/dist/${{ inputs.channel }}/$file" "s3://clover-launcher/launcher/${{ inputs.channel }}/$file" --cache-control no-cache --endpoint-url "$endpoint"
           done

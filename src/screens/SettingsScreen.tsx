@@ -61,7 +61,7 @@ type Props = {
   settings: Settings;
   onChange: (patch: Partial<Settings>) => void;
   /** Mémoire totale du poste et valeur automatique, en Go. */
-  system: { totalMemoryGb: number; autoMemoryGb: number; java: string | null };
+  system: { totalMemoryGb: number; autoMemoryGb: number; java: string | null; tray: boolean };
   accounts: Account[];
   onUseAccount: (uuid: string) => void;
   onRemoveAccount: (uuid: string) => void;
@@ -185,7 +185,7 @@ export function SettingsScreen(props: Props) {
   );
 }
 
-function General({ settings, onChange, accounts, onUseAccount, onRemoveAccount, onAddAccount, isStaff, hidden = [] }: Props) {
+function General({ settings, onChange, system, accounts, onUseAccount, onRemoveAccount, onAddAccount, isStaff, hidden = [] }: Props) {
   return (
     <>
       <Row title="Comptes" hint="Chaque compte Microsoft doit posséder Minecraft: Java Edition.">
@@ -217,9 +217,15 @@ function General({ settings, onChange, accounts, onUseAccount, onRemoveAccount, 
             Démarrer avec l'ordinateur
           </Toggle>
         )}
-        <Toggle id="keep-in-tray" checked={settings.keepInTray} onChange={(keepInTray) => onChange({ keepInTray })} hint="« Quitter » se trouve dans le menu de l'icône.">
-          Rester dans la zone de notification à la fermeture
-        </Toggle>
+        {system.tray ? (
+          <Toggle id="keep-in-tray" checked={settings.keepInTray} onChange={(keepInTray) => onChange({ keepInTray })} hint="« Quitter » se trouve dans le menu de l'icône.">
+            Rester dans la zone de notification à la fermeture
+          </Toggle>
+        ) : (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Ton bureau n'affiche pas d'icône de zone de notification (GNOME sans l'extension AppIndicator) : fermer la fenêtre quitte le launcher.
+          </p>
+        )}
       </Row>
 
       {!hidden.includes("desktopNotifications") && (
@@ -239,7 +245,7 @@ function General({ settings, onChange, accounts, onUseAccount, onRemoveAccount, 
         </Toggle>
         )}
         {isStaff && (
-          <Toggle id="beta" checked={settings.betaChannel} onChange={(betaChannel) => onChange({ betaChannel })} hint="Reçoit les versions de test avant les joueurs.">
+          <Toggle id="beta" checked={settings.betaChannel} onChange={(betaChannel) => onChange({ betaChannel })} hint="Versions de test du launcher et du jeu, avant les joueurs. De retour sur le canal normal, la version de test reste jusqu'à la prochaine version publique.">
             Canal bêta
           </Toggle>
         )}

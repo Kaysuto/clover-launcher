@@ -1,5 +1,6 @@
 {
   "minLauncherVersion": "0.1.0",
+  "betaTesters": ["6b4d8d4f-8fda-498f-b402-e2cfbbf6d144"],
   "minecraft": "26.2",
   "fabricLoader": "0.19.5",
   "server": "play.clovergames.fr",

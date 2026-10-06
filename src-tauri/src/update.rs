@@ -27,8 +27,15 @@ pub async fn check(app: &AppHandle, pending: &PendingUpdate) -> Result<Option<Up
     if crate::msix::packaged() {
         return Ok(None);
     }
+    let endpoints = crate::game::manifest::update_endpoints(crate::game::channel(app))
+        .into_iter()
+        .map(|url| url.parse().map_err(|e: url::ParseError| e.to_string()))
+        .collect::<Result<Vec<_>, _>>()?;
     let update = app
-        .updater()
+        .updater_builder()
+        .endpoints(endpoints)
+        .map_err(|e| e.to_string())?
+        .build()
         .map_err(|e| e.to_string())?
         .check()
         .await

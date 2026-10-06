@@ -1,5 +1,5 @@
-//! Contenu publié par le site pour l'accueil : actualités, joueurs par mode, derniers votes
-//! (`/api/launcher/*` de clovergames.fr). Chaque partie est facultative : une route qui ne répond
+//! Contenu publié par le site pour l'accueil : actualités, joueurs par mode, maintenance, derniers
+//! votes (`/api/launcher/*` de clovergames.fr). Chaque partie est facultative : une route qui ne répond
 //! pas laisse la sienne vide, l'interface garde alors ce qu'elle affichait.
 
 use std::time::Duration;
@@ -44,6 +44,8 @@ pub struct RecentVote {
 pub struct Feed {
     pub news: Option<Vec<NewsItem>>,
     pub modes: Option<Vec<ModeStatus>>,
+    /// Maintenance annoncée par l'équipe sur le site (bandeau de l'accueil).
+    pub maintenance: Option<bool>,
     pub votes: Option<Vec<RecentVote>>,
 }
 
@@ -54,6 +56,8 @@ struct NewsResponse {
 
 #[derive(Deserialize)]
 struct StatusResponse {
+    #[serde(default)]
+    maintenance: bool,
     servers: Vec<ModeStatus>,
 }
 
@@ -81,6 +85,7 @@ pub async fn feed() -> Feed {
                 .map(|item| NewsItem { image: item.image.filter(|image| is_https(image)), ..item })
                 .collect()
         }),
+        maintenance: modes.as_ref().map(|response| response.maintenance),
         modes: modes.map(|response| response.servers),
         votes: votes.map(|response| response.votes),
     }

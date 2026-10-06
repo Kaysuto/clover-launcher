@@ -46,6 +46,10 @@ const SERVER_POLL_MS = 60_000;
 const SERVER_RETRY_MS = 8_000;
 /** Actualités, joueurs par mode et votes : le site les met en cache 30 s à 5 min. */
 const SITE_POLL_MS = 60_000;
+/** Les réglages sont enregistrés 300 ms après le dernier changement. */
+const SETTINGS_SAVED_MS = 600;
+/** Mise à jour du launcher : vérification périodique, même fenêtre fermée. */
+const UPDATE_POLL_MS = 6 * 60 * 60_000;
 /** Console ouverte : nouvelles lignes du jeu. */
 const CONSOLE_POLL_MS = 500;
 /** Comme le cœur Rust (`game/console.rs`) : au-delà, les plus anciennes lignes tombent. */
@@ -73,6 +77,12 @@ function importSummary(instance: DetectedInstance, result: ImportResult, mods: n
     ...count(result.dependencies, "dépendance ajoutée", "dépendances ajoutées"),
   ];
   return `${instance.launcher} · ${instance.name} : ${parts.length > 0 ? parts.join(", ") : "déjà à jour"}`;
+}
+
+/** Compte listé dans le manifeste pour tester le canal bêta (UUID avec ou sans tirets). */
+function isBetaTester(catalogue: Catalogue | null, uuid: string | undefined): boolean {
+  const plain = (id: string) => id.replace(/-/g, "").toLowerCase();
+  return Boolean(uuid && catalogue?.betaTesters?.some((tester) => plain(tester) === plain(uuid)));
 }
 
 /** `undefined` tant que le site n'a rien dit de ce mode, `null` s'il est hors ligne. */
@@ -128,7 +138,7 @@ export default function App() {
   const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
   const [server, setServer] = useState<ServerStatus | null>(null);
   const [serverIcons, setServerIcons] = useState<Record<string, string>>({});
-  const [feed, setFeed] = useState<SiteFeed>({ news: null, modes: null, votes: null });
+  const [feed, setFeed] = useState<SiteFeed>({ news: null, modes: null, maintenance: null, votes: null });
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [storage, setStorage] = useState<StorageUsage | null>(null);
   const [personalMods, setPersonalMods] = useState<PersonalMod[]>([]);
@@ -151,7 +161,6 @@ export default function App() {
   const [editor, setEditor] = useState<{ open: boolean; draft: SkinLook | null; saving: boolean }>({ open: false, draft: null, saving: false });
 
   const [update, setUpdate] = useState<UpdateState | null>(null);
-  const updateChecked = useRef(false);
 
   const [maximized, setMaximized] = useState(false);
   const saveTimer = useRef<number | undefined>(undefined);
@@ -290,6 +299,7 @@ export default function App() {
       setFeed((previous) => ({
         news: next.news ?? previous.news,
         modes: next.modes ?? previous.modes,
+        maintenance: next.maintenance ?? previous.maintenance,
         votes: next.votes ?? previous.votes,
       }));
     };
@@ -309,7 +319,8 @@ export default function App() {
     document.documentElement.classList.toggle("reduce-motion", settings.animations === "reduced");
   }, [settings?.scale, settings?.animations]);
 
-  // ── Mise à jour du launcher : vérifiée une fois au démarrage, installée d'office si le réglage le demande ──
+  // ── Mise à jour du launcher : vérifiée au démarrage puis toutes les 6 h (le launcher peut rester des
+  // jours dans la zone de notification), installée d'office si le réglage le demande et sans partie ──
   const installUpdate = useCallback(async () => {
     setUpdate((current) => current && { ...current, installing: true, ratio: null, error: undefined });
     try {
@@ -319,20 +330,57 @@ export default function App() {
     }
   }, []);
 
+  // Le serveur change de version (26.2 → 26.4) : l'instance Clover suit d'office, on le dit une fois.
+  const serverVersion = catalogue?.minecraft.version;
   useEffect(() => {
-    if (!settings || updateChecked.current) return;
-    updateChecked.current = true;
-    const autoUpdate = settings.autoUpdate;
+    if (!serverVersion) return;
     api
-      .checkUpdate()
-      .then((info) => {
-        if (!info) return;
-        setUpdate({ info, installing: false, ratio: null });
-        if (autoUpdate) installUpdate();
+      .noteServerVersion(serverVersion)
+      .then((previous) => {
+        if (previous) setNotice(`Clover Games passe de Minecraft ${previous} à ${serverVersion} : l'instance Clover Games se met à jour au prochain lancement. Tes mondes et tes réglages sont gardés.`);
       })
-      // CDN injoignable ou aucune version publiée : nouvel essai au prochain démarrage.
       .catch(() => {});
-  }, [settings, installUpdate]);
+  }, [serverVersion]);
+
+  // Canal bêta changé : manifeste et mise à jour du nouveau canal, une fois le réglage enregistré.
+  const channel = settings?.betaChannel;
+  const firstChannel = useRef(true);
+  useEffect(() => {
+    if (channel === undefined) return;
+    if (firstChannel.current) {
+      firstChannel.current = false;
+      return;
+    }
+    const timer = window.setTimeout(() => api.getCatalogue().then(setCatalogue).catch((reason) => setNotice(String(reason))), SETTINGS_SAVED_MS);
+    return () => window.clearTimeout(timer);
+  }, [channel]);
+
+  const autoUpdate = useRef(false);
+  const offered = useRef<string | null>(null);
+  autoUpdate.current = Boolean(settings?.autoUpdate) && play.kind !== "running";
+  const settingsReady = Boolean(settings);
+  useEffect(() => {
+    if (!settingsReady) return;
+    const check = () =>
+      api
+        .checkUpdate()
+        .then((info) => {
+          // Une version déjà proposée ne l'est pas deux fois.
+          if (!info || info.version === offered.current) return;
+          offered.current = info.version;
+          setUpdate({ info, installing: false, ratio: null });
+          if (autoUpdate.current) installUpdate();
+        })
+        // CDN injoignable ou aucune version publiée : nouvel essai à la prochaine vérification.
+        .catch(() => {});
+    // Après l'enregistrement du réglage : un changement de canal vérifie le nouveau canal.
+    const first = window.setTimeout(check, SETTINGS_SAVED_MS);
+    const timer = window.setInterval(check, UPDATE_POLL_MS);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
+  }, [settingsReady, channel, installUpdate]);
 
   useEffect(() => {
     const unlisten = listen<{ done: number; total: number | null }>("update-progress", ({ payload }) =>
@@ -868,6 +916,7 @@ export default function App() {
               otherServers={otherServers}
               onPlayServer={(address) => { setLastLaunched("clover"); startGame(() => selectInstance("clover").then(() => api.playServer(address))); }}
               news={feed.news ?? []}
+              maintenance={feed.maintenance === true}
               onOpenLink={open}
             />
           )}
@@ -926,7 +975,7 @@ export default function App() {
               onTab={setSettingsTab}
               settings={settings}
               onChange={updateSettings}
-              system={{ totalMemoryGb: system?.totalMemoryGb ?? 8, autoMemoryGb: system?.autoMemoryGb ?? 4, java: system?.java ?? null }}
+              system={{ totalMemoryGb: system?.totalMemoryGb ?? 8, autoMemoryGb: system?.autoMemoryGb ?? 4, java: system?.java ?? null, tray: system?.tray ?? true }}
               accounts={accounts}
               onUseAccount={useAccount}
               onRemoveAccount={removeAccount}
@@ -945,7 +994,7 @@ export default function App() {
                 setStorage(await api.storageUsage());
               }}
               steam={{ state: "absent", onAdd: () => {}, onRemove: () => {} }}
-              isStaff={false}
+              isStaff={isBetaTester(catalogue, profile?.uuid) || settings.betaChannel}
               about={{ launcher: system?.launcher ?? "", minecraft: catalogue?.minecraft.version ?? "", fabric: catalogue?.fabric.loader ?? "" }}
               onOpenLink={open}
             />

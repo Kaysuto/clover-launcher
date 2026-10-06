@@ -247,3 +247,14 @@
 
 ### Commit du travail en attente depuis la 0.3.0
 - CLO-281 dépendait des instances jamais commitées (`instances.rs`, `content.rs` non suivis) : tout le travail en attente est commité sur la branche `kaysuto/clo-281-launcher-premier-lancement-comptes-multiples-et-import` (nom de branche Linear), en trois commits : logo et icônes (`ec91118`), code (`393bcaa`), documentation. `main` inchangé, rien de poussé ni publié. `.impeccable/` (configuration locale d'un outil de design) laissé hors du dépôt.
+
+## Session : 2026-10-06 (suite) — tous les tickets du launcher
+
+### Lot 1 : CLO-271, CLO-282, CLO-284, CLO-274, CLO-285 (stockage), CLO-286
+- CLO-271 clos dans Linear (R2, jeton de CI, compte Store déjà faits).
+- CLO-282 : Discord ouvert après le launcher ou redémarré, statut rétabli toutes les 30 s (`Presence::keep_alive`).
+- CLO-284 : `latest.json` revérifié toutes les 6 h ; repli GNOME sans AppIndicator (`org.kde.StatusNotifierWatcher` absent sur D-Bus) : fermer quitte, démarrage avec l'ordinateur réduit dans la barre au lieu de caché, message dans les paramètres.
+- CLO-274 : bandeau de maintenance de l'accueil (`maintenance` de `/api/launcher/status`, déjà servi par le site). Canal bêta branché de bout en bout : manifeste et `latest.json` par canal, repli sur prod, cache séparé, `betaTesters` dans le manifeste (compte Kaysuto ajouté à `manifest/prod.json`, effectif à la prochaine publication du manifeste), CI : tag `-beta` → canal `beta`, workflow Manifeste avec choix du canal.
+- CLO-285 : « Nettoyer » supprime aussi les versions de Minecraft (et leurs natives) et les runtimes Java qu'aucune instance n'utilise ; rien de supprimé si le manifeste est illisible ou qu'un jeu Clover tourne. Sur ce poste : rien à nettoyer (contrôle à blanc).
+- CLO-286 : changement de version du serveur annoncé une fois (`server_minecraft` dans `launcher.json`).
+- Vérifié : `cargo test` 66 / 15 ignorés (nouveaux : repli GNOME, canaux, versions inutilisées), réseau : canal bêta sans publication → manifeste prod n°1790960017, cache bêta vide ; clippy, `tsc`, syntaxe de `release.mjs`/`manifest.mjs`.

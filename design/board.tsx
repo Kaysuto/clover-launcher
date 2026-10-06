@@ -638,7 +638,7 @@ function SettingsBoard({ initial = "general", steam = "ready", from }: { initial
         onTab={setTab}
         settings={settings}
         onChange={(patch) => setSettings((current) => ({ ...current, ...patch }))}
-        system={{ totalMemoryGb: 16, autoMemoryGb: 4, java: "25.0.1" }}
+        system={{ totalMemoryGb: 16, autoMemoryGb: 4, java: "25.0.1", tray: true }}
         accounts={[
           { profile, skin, active: true },
           { profile: { uuid: "2", name: "Kaysuto_Alt" }, skin, active: false },

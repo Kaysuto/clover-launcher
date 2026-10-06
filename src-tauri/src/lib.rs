@@ -247,6 +247,15 @@ fn finish_onboarding(state: State<'_, AppState>) -> Result<(), String> {
     state.update(|stored| stored.onboarded = true)
 }
 
+/// Retient la version de Minecraft du serveur ; renvoie l'ancienne si elle change (à annoncer).
+#[tauri::command]
+fn note_server_version(version: String, state: State<'_, AppState>) -> Result<Option<String>, String> {
+    state.update(|stored| {
+        let previous = stored.server_minecraft.replace(version.clone());
+        previous.filter(|previous| *previous != version)
+    })
+}
+
 #[tauri::command]
 async fn get_catalogue(app: AppHandle) -> Result<game::manifest::Manifest, game::GameError> {
     game::catalogue(&app).await
@@ -271,6 +280,8 @@ struct SystemInfo {
     launcher: &'static str,
     /// Paquet du Microsoft Store : mises à jour par le Store, démarrage par la tâche du paquet.
     store: bool,
+    /// Icône de zone de notification visible (GNOME sans AppIndicator : non).
+    tray: bool,
 }
 
 #[tauri::command]
@@ -282,19 +293,46 @@ fn system_info(app: AppHandle) -> Result<SystemInfo, String> {
         java: game::installed_java(&paths),
         launcher: env!("CARGO_PKG_VERSION"),
         store: msix::packaged(),
+        tray: tray_supported(),
     })
 }
 
-#[tauri::command]
-async fn storage_usage(state: State<'_, AppState>) -> Result<storage::Usage, String> {
-    let root = state.root.clone();
-    tauri::async_runtime::spawn_blocking(move || storage::usage(&root)).await.map_err(|e| e.to_string())
+/// Versions (dossiers de `versions/`) des instances : Clover suit le manifeste. `None` si l'une
+/// n'est pas connue ou qu'un jeu Clover est ouvert : aucune version n'est alors supprimable.
+async fn kept_versions(app: &AppHandle, state: &AppState) -> Option<std::collections::HashSet<String>> {
+    if app.state::<game::console::Console>().running() || instances::managed_game_running(&state.root) {
+        return None;
+    }
+    let manifest = game::catalogue(app).await.ok()?;
+    let clover = (manifest.minecraft.version.clone(), Some(manifest.fabric.loader.clone()));
+    let mut keep = std::collections::HashSet::new();
+    for instance in state.snapshot().instances {
+        let (minecraft, loader) = match instance.kind {
+            instances::Kind::Clover => clover.clone(),
+            _ => (instance.minecraft?, instance.loader),
+        };
+        if let Some(loader) = loader {
+            keep.insert(format!("fabric-loader-{loader}-{minecraft}"));
+        }
+        keep.insert(minecraft);
+    }
+    keep.insert(format!("fabric-loader-{}-{}", clover.1.unwrap_or_default(), clover.0));
+    keep.insert(clover.0);
+    Some(keep)
 }
 
 #[tauri::command]
-async fn clean_storage(state: State<'_, AppState>) -> Result<u64, String> {
+async fn storage_usage(app: AppHandle, state: State<'_, AppState>) -> Result<storage::Usage, String> {
+    let keep = kept_versions(&app, &state).await;
     let root = state.root.clone();
-    tauri::async_runtime::spawn_blocking(move || storage::clean(&root)).await.map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || storage::usage(&root, keep.as_ref())).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn clean_storage(app: AppHandle, state: State<'_, AppState>) -> Result<u64, String> {
+    let keep = kept_versions(&app, &state).await;
+    let root = state.root.clone();
+    tauri::async_runtime::spawn_blocking(move || storage::clean(&root, keep.as_ref())).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -582,7 +620,7 @@ async fn play(
             "minimize" => {
                 let _ = window.minimize();
             }
-            "quit" if settings.keep_in_tray => {
+            "quit" if keeps_in_tray(&settings) => {
                 let _ = window.hide();
             }
             "quit" => app.exit(0),
@@ -590,6 +628,34 @@ async fn play(
         }
     }
     Ok(())
+}
+
+/// GNOME n'affiche les icônes de zone de notification qu'avec l'extension AppIndicator, qui publie
+/// le service D-Bus `org.kde.StatusNotifierWatcher`. Les autres bureaux en ont une.
+fn tray_hidden_by_desktop(desktop: &str, has_watcher: impl FnOnce() -> bool) -> bool {
+    desktop.split(':').any(|name| name.eq_ignore_ascii_case("gnome")) && !has_watcher()
+}
+
+/// Icône de zone de notification visible : sinon fermer la fenêtre quitte le launcher, qui ne
+/// pourrait plus être rouvert. Vérifié une fois par lancement.
+fn tray_supported() -> bool {
+    static SUPPORTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SUPPORTED.get_or_init(|| {
+        if !cfg!(target_os = "linux") {
+            return true;
+        }
+        let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+        !tray_hidden_by_desktop(&desktop, || {
+            let query = ["call", "--session", "--dest", "org.freedesktop.DBus", "--object-path", "/org/freedesktop/DBus", "--method", "org.freedesktop.DBus.NameHasOwner", "org.kde.StatusNotifierWatcher"];
+            // Sans `gdbus` pour répondre, on suppose l'icône visible, comme avant.
+            std::process::Command::new("gdbus").args(query).output().map_or(true, |output| String::from_utf8_lossy(&output.stdout).contains("true"))
+        })
+    })
+}
+
+/// Fermer ou lancer le jeu range le launcher dans la zone de notification plutôt que de le quitter.
+fn keeps_in_tray(settings: &store::Settings) -> bool {
+    settings.keep_in_tray && tray_supported()
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -695,7 +761,7 @@ pub fn run() {
                 let hide_target = window.clone();
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
-                        if handle.state::<AppState>().snapshot().settings.keep_in_tray {
+                        if keeps_in_tray(&handle.state::<AppState>().snapshot().settings) {
                             api.prevent_close();
                             let _ = hide_target.hide();
                         } else {
@@ -706,6 +772,10 @@ pub fn run() {
                 let at_login = std::env::args().any(|arg| arg == MINIMIZED_ARG) || msix::started_by_startup_task();
                 if !at_login {
                     window.show()?;
+                } else if !tray_supported() {
+                    // Sans icône, une fenêtre cachée serait introuvable : réduite dans la barre.
+                    window.show()?;
+                    window.minimize()?;
                 }
             }
 
@@ -724,6 +794,7 @@ pub fn run() {
                 let presence = handle.state::<Presence>();
                 presence.set_state(presence::State::Launcher).await;
                 presence.set_enabled(discord).await;
+                presence.keep_alive().await;
             });
             Ok(())
         })
@@ -739,6 +810,7 @@ pub fn run() {
             remove_account,
             save_settings,
             finish_onboarding,
+            note_server_version,
             get_catalogue,
             server_status,
             site_feed,
@@ -786,4 +858,19 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gnome_needs_the_appindicator_extension() {
+        assert!(tray_hidden_by_desktop("GNOME", || false));
+        assert!(tray_hidden_by_desktop("ubuntu:GNOME", || false));
+        assert!(!tray_hidden_by_desktop("ubuntu:GNOME", || true));
+        assert!(!tray_hidden_by_desktop("KDE", || false));
+        assert!(!tray_hidden_by_desktop("", || false));
+        assert!(!tray_hidden_by_desktop("GNOME-Flashback", || false));
+    }
 }

@@ -28,6 +28,8 @@ export type Stored = {
 /** Manifeste distant signé, tel que vérifié par le launcher. */
 export type Catalogue = {
   minecraft: { version: string };
+  /** Comptes Minecraft (UUID) qui voient le réglage « Canal bêta ». */
+  betaTesters?: string[];
   fabric: { loader: string };
   server: { host: string };
   modes: { id: string; name: string; image: string | null; host?: string }[];
@@ -50,10 +52,13 @@ export type ServerStatus = { online: boolean; players: number | null; max: numbe
 export type SiteFeed = {
   news: NewsItem[] | null;
   modes: { id: string; online: boolean | null; players: number | null }[] | null;
+  /** Maintenance annoncée sur le site ; `null` si la route n'a pas répondu. */
+  maintenance: boolean | null;
   votes: RecentVote[] | null;
 };
 /** `store` : lancé depuis le paquet du Microsoft Store (mises à jour par le Store). */
-export type SystemInfo = { totalMemoryGb: number; autoMemoryGb: number; java: string | null; launcher: string; store: boolean };
+/** `tray` : icône de zone de notification visible (GNOME sans l'extension AppIndicator : non). */
+export type SystemInfo = { totalMemoryGb: number; autoMemoryGb: number; java: string | null; launcher: string; store: boolean; tray: boolean };
 export type StorageUsage = { parts: { id: string; label: string; bytes: number }[]; reclaimable: number; gameDir: string };
 export type SkinEntry = { id: string; name: string; model: SkinModel; texture: string };
 export type TrayState = { available: boolean; canPlay: boolean };
@@ -90,6 +95,8 @@ export const api = {
   removeAccount: (uuid: string) => invoke<Profile | null>("remove_account", { uuid }),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   finishOnboarding: () => invoke<void>("finish_onboarding"),
+  /** Retient la version de Minecraft du serveur ; l'ancienne si elle vient de changer. */
+  noteServerVersion: (version: string) => invoke<string | null>("note_server_version", { version }),
   getCatalogue: () => invoke<Catalogue>("get_catalogue"),
   /** `host` : adresse telle que tapée dans le jeu (`hôte` ou `hôte:port`, SRV suivi). */
   serverStatus: (host: string) => invoke<ServerStatus>("server_status", { host }),

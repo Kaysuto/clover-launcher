@@ -2,9 +2,10 @@
 //!
 //! L'identifiant d'application est public (il figure dans tout statut Discord) ; aucun secret.
 //! Discord fermé ou absent n'est jamais une erreur : on réessaie discrètement au changement
-//! d'état suivant. Le nom affiché après « Joue à » est celui de l'application Discord.
+//! d'état suivant et toutes les 30 s (`keep_alive`). Le nom affiché après « Joue à » est celui de
+//! l'application Discord.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use discord_rich_presence::{
     activity::{Activity, Assets, Button, Timestamps},
@@ -21,6 +22,8 @@ const SITE_URL: &str = "https://clovergames.fr";
 /// Tête du skin, rendue par Minotar ; Discord accepte une URL comme image. Pas Crafatar : il
 /// renvoie le robot de Discord vers une page d'erreur (crafatar/crafatar#322).
 const HEAD_URL: &str = "https://minotar.net/helm";
+/// Délai entre deux tentatives de connexion quand Discord est fermé ou absent.
+const RETRY: Duration = Duration::from_secs(30);
 
 /// Compte actif, en petite image : sa tête et son pseudo au survol.
 #[derive(Debug, Clone, PartialEq)]
@@ -76,6 +79,20 @@ impl Presence {
         inner.state = Some(state);
         if inner.enabled {
             inner.publish();
+        }
+    }
+
+    /// Reconnecte le statut si Discord est ouvert après le launcher ou redémarré, toutes les 30 s,
+    /// pour toujours : à lancer une fois au démarrage.
+    pub async fn keep_alive(&self) {
+        let mut ticks = tokio::time::interval(RETRY);
+        ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            ticks.tick().await;
+            let mut inner = self.inner.lock().await;
+            if inner.enabled && inner.client.is_none() {
+                inner.publish();
+            }
         }
     }
 

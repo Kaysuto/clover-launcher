@@ -168,10 +168,19 @@ pub fn installed_java(paths: &Paths) -> Option<String> {
     })
 }
 
+/// Canal choisi dans les paramètres (« Canal bêta »).
+pub fn channel(app: &AppHandle) -> &'static str {
+    if app.state::<crate::AppState>().snapshot().settings.beta_channel {
+        manifest::BETA
+    } else {
+        manifest::PROD
+    }
+}
+
 /// Manifeste courant (téléchargé, sinon en cache), pour l'interface.
 pub async fn catalogue(app: &AppHandle) -> Result<manifest::Manifest> {
     let paths = Paths::new(app)?;
-    manifest::load(&download::client(), &paths.manifest).await
+    manifest::load(&download::client(), &paths.manifest, channel(app)).await
 }
 
 /// Installe ce qui manque puis démarre le jeu, connecté directement à `destination`.
@@ -189,7 +198,7 @@ pub async fn play(
     let progress = |progress: Progress| {
         let _ = app.emit("install-progress", progress);
     };
-    let manifest = manifest::load(&http, &paths.manifest).await?;
+    let manifest = manifest::load(&http, &paths.manifest, channel(app)).await?;
     manifest::check_launcher_version(&manifest)?;
     let server = match destination {
         Destination::Mode(mode) => manifest.server_for(mode.as_deref()).ok_or(GameError::NoQuickPlay)?.to_owned(),

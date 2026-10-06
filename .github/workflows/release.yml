@@ -1,7 +1,8 @@
 # Release du launcher : pousser un tag `v<version de src-tauri/Cargo.toml>` (ex. v0.2.0).
 # Construit Windows, macOS et Linux, signe les paquets de mise à jour (clé de l'updater), puis
-# publie sur R2 : paquets dans launcher/prod/<version>/, ensuite latest.json (updater) et
-# downloads.json (page /launcher du site).
+# publie sur R2 : paquets dans launcher/<canal>/<version>/, ensuite latest.json (updater) et
+# downloads.json (page /launcher du site). Canal `prod`, ou `beta` pour une préversion
+# (`v0.4.0-beta.1`) : seuls les testeurs du canal bêta la reçoivent, sans paquet Microsoft Store.
 #
 # Secrets : TAURI_SIGNING_PRIVATE_KEY (Sécurités/clover-launcher-updater.key, sans mot de passe),
 # R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (jeton limité au bucket clover-launcher).
@@ -80,11 +81,11 @@ jobs:
 
       # Pour Partner Center, à soumettre à la main : jamais envoyé sur R2.
       - name: Paquet MSIX du Microsoft Store
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && !contains(github.ref_name, '-')
         run: node scripts/msix.mjs msix
 
       - uses: actions/upload-artifact@v4
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && !contains(github.ref_name, '-')
         with:
           name: msix-store
           path: msix/
@@ -114,6 +115,8 @@ jobs:
 
       # Échoue si un système manque : jamais d'index vers une release partielle.
       - run: node scripts/release.mjs index out
+        env:
+          CLOVER_CHANNEL: ${{ contains(github.ref_name, '-') && 'beta' || 'prod' }}
 
       - name: Envoi sur R2
         env:
@@ -126,7 +129,7 @@ jobs:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
         run: |
           endpoint="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
-          channel="s3://clover-launcher/launcher/prod"
+          channel="s3://clover-launcher/launcher/${{ contains(github.ref_name, '-') && 'beta' || 'prod' }}"
           version="${GITHUB_REF_NAME#v}"
           # Paquets d'abord, sous un dossier versionné ; les index ensuite.
           aws s3 cp out "$channel/$version/" --recursive --exclude "*.sig" --exclude "*.json" --endpoint-url "$endpoint"
