@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "cloverclient",
+  "version": "${version}",
+  "name": "Clover",
+  "description": "Installé par le Clover Launcher : un trèfle devant le nom des joueurs qui jouent avec le launcher, dans la tablist et au-dessus de leur tête.",
+  "authors": ["Clover Games"],
+  "contact": {
+    "homepage": "https://clovergames.fr"
+  },
+  "license": "All-Rights-Reserved",
+  "icon": "assets/cloverclient/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["fr.clovergames.client.CloverClient"]
+  },
+  "mixins": ["cloverclient.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.2",
+    "java": ">=25"
+  }
+}

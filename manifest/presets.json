@@ -1,0 +1,55 @@
+{
+  "common": {
+    "options": {
+      "lang": "fr_fr",
+      "onboardAccessibility": "false",
+      "skipMultiplayerWarning": "true",
+      "joinedFirstServer": "true",
+      "tutorialStep": "none",
+      "inactivityFpsLimit": "\"afk\"",
+      "key_zoomify.key.zoom": "key.keyboard.c"
+    }
+  },
+  "modest": {
+    "options": {
+      "graphicsPreset": "\"fast\"",
+      "renderDistance": "8",
+      "simulationDistance": "6",
+      "particles": "1",
+      "renderClouds": "\"false\"",
+      "biomeBlendRadius": "0",
+      "entityDistanceScaling": "0.75",
+      "mipmapLevels": "2",
+      "maxFps": "120",
+      "enableVsync": "false"
+    }
+  },
+  "standard": {
+    "options": {
+      "graphicsPreset": "\"fancy\"",
+      "renderDistance": "12",
+      "simulationDistance": "8",
+      "particles": "0",
+      "renderClouds": "\"fast\"",
+      "biomeBlendRadius": "1",
+      "entityDistanceScaling": "1.0",
+      "mipmapLevels": "4",
+      "maxFps": "144",
+      "enableVsync": "false"
+    }
+  },
+  "powerful": {
+    "options": {
+      "graphicsPreset": "\"fancy\"",
+      "renderDistance": "16",
+      "simulationDistance": "12",
+      "particles": "0",
+      "renderClouds": "\"true\"",
+      "biomeBlendRadius": "2",
+      "entityDistanceScaling": "1.0",
+      "mipmapLevels": "4",
+      "maxFps": "260",
+      "enableVsync": "true"
+    }
+  }
+}

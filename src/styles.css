@@ -1,0 +1,355 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/montserrat";
+@import "@fontsource/lilita-one";
+
+/* Chiffres façon jeu (compteurs de joueurs, versions, mémoire). Sous-ensemble latin de Monocraft, OFL. */
+@font-face {
+  font-family: "Monocraft";
+  src: url("./assets/fonts/monocraft-subset.woff2") format("woff2");
+  font-display: block;
+}
+
+/*
+ * Thème « Dark Forest » du site (siteweb/src/lib/theme.ts), seul thème du launcher.
+ * Les variables gardent les noms shadcn pour que les composants de src/components/ui s'y branchent.
+ */
+:root {
+  --background: #14120f;
+  --foreground: #f1ece2;
+  --card: #1c1914;
+  --card-foreground: #f1ece2;
+  --popover: #1c1914;
+  --popover-foreground: #f1ece2;
+  --primary: #52a96c;
+  --primary-foreground: #14120f;
+  --secondary: #2c2820;
+  --secondary-foreground: #f1ece2;
+  --muted: #2c2820;
+  --muted-foreground: #8a8477;
+  --accent: #d9a441;
+  --accent-foreground: #14120f;
+  --destructive: #e5534f;
+  --border: #2c2820;
+  --input: #2c2820;
+  --ring: #52a96c;
+  --radius: 0.625rem;
+
+  /* Fond de la fenêtre, sous les panneaux flottants (plus sombre que `--background`). */
+  --canvas: #0a0907;
+
+  /* Système « bloc » repris du site */
+  --mc-outline: #050403;
+  --mc-frame: rgba(120, 108, 90, 0.35);
+  --mc-slot: #100e0b;
+
+  /* Or du logo, pour le bouton « Jouer » : face, dégradé, tranche. */
+  --gold-top: #ffd457;
+  --gold-bottom: #f59e1b;
+  --gold-edge: #8a3f0e;
+  --gold-ink: #3b1905;
+
+  color-scheme: dark;
+}
+
+/* Réglages d'apparence (attributs posés par App.tsx) : couleur principale et coins. */
+:root[data-accent="diamond"] {
+  --primary: #4cc3cf;
+  --ring: #4cc3cf;
+}
+:root[data-accent="lapis"] {
+  --primary: #6b8ff0;
+  --ring: #6b8ff0;
+}
+:root[data-accent="amethyst"] {
+  --primary: #a68ae6;
+  --ring: #a68ae6;
+}
+:root[data-accent="cherry"] {
+  --primary: #e88fbd;
+  --ring: #e88fbd;
+}
+:root[data-accent="copper"] {
+  --primary: #e0894f;
+  --ring: #e0894f;
+}
+:root[data-corners="square"] {
+  --radius: 0.25rem;
+  --corner-scale: 0.4;
+}
+
+@theme inline {
+  --font-sans: "Montserrat Variable", system-ui, sans-serif;
+  --font-display: "Lilita One", "Montserrat Variable", sans-serif;
+  --font-pixel: "Monocraft", ui-monospace, monospace;
+
+  --color-canvas: var(--canvas);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Recherche des autres launchers : bloc qui balaie la barre, bande qui parcourt le panneau, ligne
+   trouvée qui s'ouvre au lieu de pousser d'un coup celles du dessous. */
+@theme {
+  --animate-import-sweep: import-sweep 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  --animate-import-scanline: import-scanline 2.6s ease-in-out infinite;
+  --animate-import-row: import-row 320ms cubic-bezier(0.2, 0, 0, 1) both;
+
+  @keyframes import-row {
+    from {
+      grid-template-rows: 0fr;
+      opacity: 0;
+    }
+    to {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+  }
+
+  @keyframes import-sweep {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(290%);
+    }
+  }
+  @keyframes import-scanline {
+    from {
+      transform: translateY(-100%);
+    }
+    to {
+      transform: translateY(340%);
+    }
+  }
+}
+
+/* Contour du jeu : 2 px quasi noirs, liseré intérieur décalé. */
+@utility mc-frame {
+  border: 2px solid var(--mc-outline);
+  outline: 2px solid var(--mc-frame);
+  outline-offset: -4px;
+  border-radius: calc(var(--mc-radius, 8px) * var(--corner-scale, 1));
+}
+
+/* Case d'inventaire : fond creusé, même contour. */
+@utility mc-slot {
+  border: 2px solid var(--mc-outline);
+  background: var(--mc-slot);
+  outline: 2px solid var(--mc-frame);
+  outline-offset: -4px;
+  border-radius: calc(var(--mc-radius, 6px) * var(--corner-scale, 1));
+}
+
+/* Bouton en relief : arête claire en haut, ombre en bas, enfoncé au clic. */
+@utility mc-bevel {
+  border: 2px solid var(--mc-outline);
+  border-radius: calc(var(--mc-radius, 6px) * var(--corner-scale, 1));
+  box-shadow:
+    inset 0 2px 0 0 rgb(255 255 255 / 0.22),
+    inset 0 -3px 0 0 rgb(0 0 0 / 0.28);
+  transition: filter 150ms, transform 150ms;
+  &:hover:not(:disabled) {
+    filter: brightness(1.12);
+  }
+  &:active:not(:disabled) {
+    box-shadow: inset 0 -1px 0 0 rgb(0 0 0 / 0.28);
+    transform: translateY(1px);
+  }
+}
+
+/*
+ * Panneau flottant : la coquille et l'accueil posent leurs blocs côte à côte sur `--canvas`,
+ * séparés par un vide. Arête claire en haut, ombre douce dessous ; coins réglés par l'apparence.
+ */
+@utility tile {
+  border: 1px solid rgb(255 255 255 / 0.07);
+  border-radius: calc(var(--radius) + 4px);
+  background-color: var(--background);
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.04),
+    0 12px 28px -16px rgb(0 0 0 / 0.9);
+}
+
+/* Ombre portée du texte en jeu. */
+@utility mc-text-shadow {
+  text-shadow: 0.1em 0.1em 0 #3f3f3f;
+}
+
+@utility pixelated {
+  image-rendering: pixelated;
+}
+
+/* Windows tray popup: transparent window around the rounded Clover surface. */
+html[data-surface="tray-menu"],
+html[data-surface="tray-menu"] body,
+html[data-surface="tray-menu"] #root {
+  background: transparent;
+  overflow: hidden;
+}
+.tray-menu-anchor {
+  position: absolute;
+  top: 0;
+  left: 8px;
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: 0;
+}
+.tray-menu-content {
+  box-sizing: border-box;
+  width: 260px;
+  padding: 6px;
+  border: 1px solid #3a352d;
+  border-radius: 14px;
+  background: #14120f;
+  color: #eee8db;
+  font-family: "Segoe UI", sans-serif;
+  font-size: 13px;
+}
+.tray-menu-item {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding-inline: 10px;
+  border-radius: 7px;
+  outline: none;
+  cursor: default;
+}
+.tray-menu-item[data-highlighted] { background: #2a251e; }
+.tray-menu-item[data-disabled] { color: #8a8477; }
+.tray-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: #3a352d;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    user-select: none;
+  }
+  img {
+    -webkit-user-drag: none;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /*
+   * Barres de défilement aux couleurs du site (thème sombre de siteweb/src/app/globals.css).
+   * Pseudo-éléments seulement : WebView2 les ignore dès que `scrollbar-width` ou `scrollbar-color`
+   * est défini. La bordure transparente élargit la zone cliquable sans épaissir le trait.
+   */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--secondary) padding-box;
+    border: 2px solid transparent;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover,
+  ::-webkit-scrollbar-thumb:active {
+    background-color: var(--primary);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/*
+ * Bouton « Jouer » : une dalle dorée en relief, taillée comme les lettres du logo.
+ * La tranche (ombre dure sous la face) s'écrase quand on appuie.
+ */
+@layer components {
+  .play-slab {
+    --lift: 7px;
+    position: relative;
+    display: grid;
+    place-items: center;
+    border: 2px solid var(--mc-outline);
+    border-radius: 12px;
+    background: linear-gradient(180deg, var(--gold-top), var(--gold-bottom));
+    color: var(--gold-ink);
+    box-shadow:
+      inset 0 3px 0 0 rgb(255 255 255 / 0.45),
+      inset 0 -3px 0 0 rgb(138 63 14 / 0.35),
+      0 var(--lift) 0 0 var(--gold-edge),
+      0 var(--lift) 0 2px var(--mc-outline),
+      0 calc(var(--lift) + 14px) 28px rgb(0 0 0 / 0.55);
+    transform: translateY(0);
+    transition: transform 90ms ease-out, box-shadow 90ms ease-out, filter 150ms;
+  }
+  .play-slab:hover:not(:disabled) {
+    filter: brightness(1.06) saturate(1.05);
+  }
+  .play-slab:active:not(:disabled) {
+    --lift: 2px;
+    transform: translateY(5px);
+  }
+  .play-slab:disabled {
+    cursor: default;
+  }
+  /* Avancement de l'installation : la face s'assombrit de gauche à droite. */
+  .play-slab-fill {
+    position: absolute;
+    inset: 0;
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgb(138 63 14 / 0.38), rgb(138 63 14 / 0.52));
+    transform-origin: left;
+    transition: transform 300ms ease-out;
+  }
+}
+
+/* Réglage « Animations : réduites » : comme prefers-reduced-motion, mais choisi dans le launcher. */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}

@@ -1,0 +1,38 @@
+{
+  "minLauncherVersion": "0.1.0",
+  "betaTesters": ["6b4d8d4f-8fda-498f-b402-e2cfbbf6d144"],
+  "minecraft": "26.2",
+  "fabricLoader": "0.19.5",
+  "server": "play.clovergames.fr",
+  "modes": [
+    { "id": "lobby", "name": "Lobby" },
+    { "id": "bedwars", "name": "BedWars", "host": "bedwars.play.clovergames.fr" },
+    { "id": "practice", "name": "Practice", "host": "practice.play.clovergames.fr" },
+    { "id": "pvpsoup", "name": "PvPSoup", "host": "pvpsoup.play.clovergames.fr" },
+    { "id": "skypvp", "name": "SkyPvP", "host": "skypvp.play.clovergames.fr" },
+    { "id": "creatif", "name": "Créatif", "host": "creatif.play.clovergames.fr" }
+  ],
+  "mods": [
+    { "slug": "sodium", "category": "performance", "default": true, "description": "Moteur de rendu optimisé : beaucoup plus d'images par seconde." },
+    { "slug": "ferrite-core", "category": "performance", "default": true, "description": "Réduit la mémoire utilisée par le jeu." },
+    { "slug": "immediatelyfast", "category": "performance", "default": true, "description": "Accélère l'affichage de l'interface, du texte et des entités." },
+    { "slug": "entityculling", "category": "performance", "default": true, "description": "Ignore les entités cachées derrière des blocs." },
+    { "slug": "moreculling", "category": "performance", "default": true, "description": "Ignore les faces de blocs que tu ne peux pas voir." },
+    { "slug": "dynamic-fps", "category": "performance", "default": true, "description": "Réduit les images par seconde quand le jeu est en arrière-plan." },
+
+    { "slug": "iris", "category": "visual", "default": false, "description": "Shaders : éclairage et ombres réalistes." },
+    { "slug": "continuity", "category": "visual", "default": false, "description": "Textures connectées pour les packs qui les utilisent." },
+    { "slug": "sodium-extra", "category": "visual", "default": false, "description": "Réglages graphiques supplémentaires pour Sodium." },
+    { "slug": "reeses-sodium-options", "category": "visual", "default": false, "description": "Menu des options graphiques plus lisible." },
+
+    { "slug": "modmenu", "category": "comfort", "default": false, "description": "Liste des mods installés et accès à leurs réglages." },
+    { "slug": "zoomify", "category": "comfort", "default": false, "description": "Zoom sur une touche." },
+    { "slug": "appleskin", "category": "comfort", "default": false, "description": "Affiche la saturation et la valeur nutritive de la nourriture." },
+    { "slug": "chat-heads", "category": "comfort", "default": false, "description": "Tête du joueur à côté de ses messages dans le chat." },
+    { "slug": "mouse-tweaks", "category": "comfort", "default": false, "description": "Range l'inventaire plus vite à la souris." },
+    { "slug": "shulkerboxtooltip", "category": "comfort", "default": false, "description": "Aperçu du contenu des boîtes de Shulker au survol." },
+    { "slug": "controlling", "category": "comfort", "default": false, "description": "Recherche dans le réglage des touches." },
+    { "slug": "betterf3", "category": "comfort", "default": false, "description": "Écran de débogage (F3) plus lisible." },
+    { "slug": "cloverclient", "name": "Clover", "version": "1.0.0", "minecraft": ["26.2"], "url": "https://cdn.clovergames.fr/launcher/mods/cloverclient-1.0.0.jar" }
+  ]
+}

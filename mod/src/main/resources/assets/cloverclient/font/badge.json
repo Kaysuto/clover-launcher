@@ -1,0 +1,15 @@
+{
+  "providers": [
+    {
+      "type": "bitmap",
+      "file": "cloverclient:font/badge.png",
+      "height": 9,
+      "ascent": 8,
+      "chars": [""]
+    },
+    {
+      "type": "space",
+      "advances": { "": 2 }
+    }
+  ]
+}
