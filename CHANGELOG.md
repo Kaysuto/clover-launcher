@@ -5,6 +5,16 @@ Ce qui a changé d'une version à l'autre du Clover Launcher. L'historique git d
 
 ## Pas encore publié
 
+- Journaux : durée de conservation réglable dans Paramètres › Stockage (7, 14, 30, 90 jours ou
+  toujours), appliquée au démarrage à toutes les instances, personnelles comprises. Chaque
+  instance affiche ses journaux dans ses paramètres, avec « Ouvrir le dossier » et « Supprimer
+  les journaux ». Les boutons « Ouvrir » de la console et de l'écran de plantage ouvrent les
+  journaux de Minecraft de l'instance concernée.
+- Skin 3D : glisser de côté le fait tourner, même sur le personnage ; glisser vers le haut ou le
+  bas l'attrape.
+- Plus de fenêtre « Modifier le skin » : les bras se choisissent sous l'aperçu de la page Skins,
+  appliqués au skin porté après confirmation (annulable) ou au skin essayé, et gardés pour un skin
+  de « Mes skins ».
 - Bouton « Partager » dans la console et sur l'écran de plantage : le journal est publié sur
   mclo.gs après confirmation, et le lien est copié pour le support. Le jeton Minecraft en est
   retiré.

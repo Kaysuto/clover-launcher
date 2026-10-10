@@ -38,6 +38,9 @@ pub struct Settings {
     pub java_args: String,
     pub discord_presence: bool,
     pub crash_reports: bool,
+    /// Journaux et rapports de plantage de toutes les instances supprimés au démarrage passé ce
+    /// nombre de jours ; 0 : gardés pour toujours (voir `storage`).
+    pub log_retention_days: u32,
     /// Mods du catalogue choisis ; `None` = mods activés par défaut dans le manifeste.
     pub enabled_mods: Option<Vec<String>>,
 }
@@ -67,6 +70,7 @@ impl Default for Settings {
             discord_presence: true,
             // Consentement RGPD : désactivé tant que le joueur ne l'a pas donné.
             crash_reports: false,
+            log_retention_days: 14,
             enabled_mods: None,
         }
     }

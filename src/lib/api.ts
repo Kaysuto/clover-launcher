@@ -175,10 +175,9 @@ export const api = {
   exportModpack: (id: string, parts: ExportParts) => invoke<ExportedModpack | null>("export_modpack", { id, parts }),
   /** Nouvelle instance (Vanilla ou Fabric, dossier séparé) à partir d'une installation détectée ; renvoie son identifiant. */
   importAsInstance: (id: string, choices: Record<ImportItem, boolean>) => invoke<string>("import_as_instance", { id, choices }),
-  storageUsage: () => invoke<StorageUsage>("storage_usage"),
-  cleanStorage: () => invoke<number>("clean_storage"),
+  storageUsage: (retentionDays: number) => invoke<StorageUsage>("storage_usage", { retentionDays }),
+  cleanStorage: (retentionDays: number) => invoke<number>("clean_storage", { retentionDays }),
   openGameDir: () => invoke<void>("open_game_dir"),
-  openLogsDir: () => invoke<void>("open_logs_dir"),
   /** Sortie du jeu de l'instance après l'entrée `after` (0 : tout ce que le launcher garde). */
   gameConsole: (instance: string, after: number) => invoke<ConsoleSnapshot>("game_console", { instance, after }),
   /** Instances dont le jeu, lancé par ce launcher, est ouvert. */
@@ -189,6 +188,8 @@ export const api = {
   /** Anciens journaux d'une instance, du plus récent au plus ancien. */
   gameLogs: (id: string) => invoke<GameLogFile[]>("game_logs", { id }),
   readGameLog: (id: string, file: GameLogFile) => invoke<LogEntry[]>("read_game_log", { id, folder: file.folder, name: file.name }),
+  /** Supprime les journaux et rapports de plantage de l'instance ; renvoie les octets libérés. */
+  clearInstanceLogs: (id: string) => invoke<number>("clear_instance_logs", { id }),
   clearConsole: (instance: string) => invoke<void>("clear_game_console", { instance }),
   checkUpdate: () => invoke<LauncherUpdate | null>("check_update"),
   /** Relance le launcher une fois la mise à jour installée : ne revient qu'en cas d'erreur. */
@@ -196,6 +197,8 @@ export const api = {
   listSkins: () => invoke<{ library: SkinEntry[] }>("list_skins"),
   addSkin: (bytes: Uint8Array, name: string, model: SkinModel) => invoke<SkinEntry>("add_skin", { bytes: Array.from(bytes), name, model }),
   renameSkin: (id: string, name: string) => invoke<string>("rename_skin", { id, name }),
+  /** Bras avec lesquels un skin de la bibliothèque sera porté. */
+  setSkinModel: (id: string, model: SkinModel) => invoke<void>("set_skin_model", { id, model }),
   removeSkin: (id: string) => invoke<void>("remove_skin", { id }),
   applySkin: (texture: string, model: SkinModel, cape: string | null) => invoke<Profile>("apply_skin", { texture, model, cape }),
   /** Ajoute à la bibliothèque une texture de laby.net ou de Mojang. */

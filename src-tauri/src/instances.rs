@@ -597,7 +597,8 @@ pub fn open_instance_folder(
     let path = match folder.as_str() {
         "game" => paths.game,
         "mods" => paths.personal_mods,
-        "logs" => paths.logs,
+        // Journaux de Minecraft (`latest.log`, parties archivées) ; les rapports de plantage sont à côté.
+        "logs" => paths.game.join("logs"),
         "saves" | "resourcepacks" | "shaderpacks" | "screenshots" => paths.game.join(&folder),
         // Les datapacks sont rangés dans chaque monde.
         "datapacks" => paths.game.join("saves"),
@@ -614,6 +615,24 @@ pub fn open_instance_folder(
     app.opener()
         .open_path(path.to_string_lossy(), None::<&str>)
         .map_err(|e| e.to_string())
+}
+
+/// « Supprimer les journaux » d'une instance : ceux de Minecraft, ses rapports de plantage et la
+/// sortie gardée par le launcher. Ceux d'un dossier de jeu partagé le sont pour toutes les
+/// instances qui l'utilisent. Renvoie le nombre d'octets libérés.
+#[tauri::command]
+pub async fn clear_instance_logs(id: String, app: AppHandle, state: State<'_, AppState>) -> Result<u64, String> {
+    let instance = resolve(&state.snapshot(), Some(&id)).map_err(|e| e.to_string())?;
+    let paths = paths(Paths::new(&app).map_err(|e| e.to_string())?, &instance).map_err(|e| e.to_string())?;
+    let root = state.root.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if open_game_dirs(&root).iter().any(|open| game::games::same_dir(open, &paths.game)) {
+            return Err("Ferme Minecraft avant de supprimer ses journaux.".to_owned());
+        }
+        Ok(crate::storage::clear_logs(&[paths.game.join("logs"), paths.game.join("crash-reports"), paths.logs]))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Monde, pack, datapack ou capture d'écran du dossier de jeu d'une instance.

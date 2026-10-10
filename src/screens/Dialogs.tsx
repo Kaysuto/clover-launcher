@@ -9,7 +9,7 @@ import type { NameAvailability, NameChange } from "@/lib/api";
 import { primaryButton, secondaryButton } from "@/lib/buttons";
 import { ownedCapeText } from "@/lib/capes";
 import { cn } from "@/lib/utils";
-import type { Cape } from "@/types";
+import type { Cape, SkinModel } from "@/types";
 
 const content = "mc-frame gap-5 border-[var(--mc-outline)] bg-card p-6 ring-0 sm:max-w-[560px]";
 const footer = "-mx-6 -mb-6 rounded-b-[6px] border-border bg-[#17150f] px-6 py-4";
@@ -90,6 +90,37 @@ export function CapeDialog(props: { request: { cape: Cape | null } | null; onCon
           <button type="button" onClick={() => props.onConfirm(cape)} className={primaryButton}>
             <Check className="size-4" aria-hidden />
             {cape ? "Porter cette cape" : "Enlever la cape"}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Confirmation avant de changer les bras du skin porté : ils s'appliquent au compte Minecraft. */
+export function ModelDialog(props: { request: SkinModel | null; onConfirm: (model: SkinModel) => void; onCancel: () => void }) {
+  // Garde la dernière demande affichée pendant l'animation de fermeture.
+  const last = useRef(props.request);
+  if (props.request) last.current = props.request;
+  const model = last.current ?? "classic";
+  const slim = model === "slim";
+  return (
+    <Dialog open={props.request !== null} onOpenChange={(open) => !open && props.onCancel()}>
+      <DialogContent className={content}>
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl font-normal">{slim ? "Passer aux bras fins ?" : "Passer aux bras classiques ?"}</DialogTitle>
+          <DialogDescription className="text-[13px] leading-relaxed">
+            Tes bras feront {slim ? "3" : "4"} pixels de large sur ton compte Minecraft, sur Clover Games comme sur tous les serveurs. Un skin dessiné pour des bras{" "}
+            {slim ? "classiques" : "fins"} peut alors paraître décalé.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className={footer}>
+          <button type="button" onClick={props.onCancel} className={secondaryButton}>
+            Annuler
+          </button>
+          <button type="button" onClick={() => props.onConfirm(model)} className={primaryButton}>
+            <Check className="size-4" aria-hidden />
+            {slim ? "Passer aux bras fins" : "Passer aux bras classiques"}
           </button>
         </DialogFooter>
       </DialogContent>

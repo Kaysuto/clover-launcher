@@ -31,7 +31,6 @@ import { ModrinthDialog } from "@/screens/ModrinthDialog";
 import { ModsScreen, type ModsView } from "@/screens/ModsScreen";
 import { DEFAULT_IMPORT, OnboardingAccounts, OnboardingDone, OnboardingImport, type LoginState } from "@/screens/OnboardingScreen";
 import { type Account, type Settings, SettingsScreen, type SettingsTab, type HiddenSetting, type SteamState, settingsTabLabel } from "@/screens/SettingsScreen";
-import { SkinEditorDialog } from "@/screens/SkinEditorDialog";
 import { type SkinStatus, SkinsScreen } from "@/screens/SkinsScreen";
 import { ProfileScreen } from "@/screens/ProfileScreen";
 import type { Cape, ConsoleSnapshot, DetectedInstance, GameExited, ImportItem, ImportResult, ImportScan, LauncherNotification, InstanceEntry, InstanceInput, ModInfo, ModrinthKind, PersonalMod, PlaySession, PlayState, Profile, Progress, SavedSkin, SkinLook, SkinModel, Tab } from "@/types";
@@ -48,6 +47,7 @@ const STORAGE_COLORS: Record<string, string> = {
   mods: "#a57bc9",
   worlds: "#e08a4d",
   screenshots: "#8a8477",
+  logs: "#c96f6f",
 };
 
 const SERVER_POLL_MS = 60_000;
@@ -128,15 +128,6 @@ function modePlayers(feed: SiteFeed, id: string): number | null | undefined {
 
 const toCape = (cape: { id: string; name: string; url: string }): Cape => ({ id: cape.id, name: cape.name, texture: cape.url });
 
-async function readAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
 export default function App() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [stored, setStored] = useState<Stored | null>(null);
@@ -214,7 +205,6 @@ export default function App() {
   const [skins, setSkins] = useState<{ library: SkinEntry[] }>({ library: [] });
   const [selectedSkin, setSelectedSkin] = useState<string | null>(null);
   const [skinStatus, setSkinStatus] = useState<SkinStatus | null>(null);
-  const [editor, setEditor] = useState<{ open: boolean; draft: SkinLook | null; saving: boolean }>({ open: false, draft: null, saving: false });
 
   const [update, setUpdate] = useState<UpdateState | null>(null);
 
@@ -385,6 +375,7 @@ export default function App() {
 
   // ── Apparence : taille de l'interface et animations ──
   const settings = stored?.settings;
+  const retentionDays = settings?.logRetentionDays;
   useEffect(() => {
     if (!settings) return;
     getCurrentWebview().setZoom(settings.scale / 100).catch(() => {});
@@ -469,8 +460,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (tab === "settings" && settingsTab === "storage") api.storageUsage().then(setStorage).catch(() => {});
-  }, [tab, settingsTab]);
+    if (tab === "settings" && settingsTab === "storage" && retentionDays !== undefined) api.storageUsage(retentionDays).then(setStorage).catch(() => {});
+  }, [tab, settingsTab, retentionDays]);
 
   // ── Notifications du site ──
   const [notifications, setNotifications] = useState<LauncherNotification[]>([]);
@@ -1070,16 +1061,27 @@ export default function App() {
     }
   };
 
-  const saveEditor = async () => {
-    if (!editor.draft) return;
-    setEditor((current) => ({ ...current, saving: true }));
+  /** Bras du skin porté, changés directement sur le compte ; annulable. */
+  const wearModel = async (model: SkinModel, undoable = true) => {
+    const previous = look.model;
+    const arms = model === "slim" ? "fins" : "classiques";
+    setSkinStatus({ kind: "busy", message: `Passage aux bras ${arms}…` });
     try {
-      setProfile(await api.applySkin(editor.draft.texture, editor.draft.model, editor.draft.cape?.id ?? null));
+      setProfile(await api.applySkin(look.texture, model, activeCape?.id ?? null));
       await refreshStored();
-      setEditor({ open: false, draft: null, saving: false });
-      setSkinStatus(null);
+      setSkinStatus({ kind: "done", message: `Bras ${arms} appliqués à ton skin.`, undo: undoable ? () => void wearModel(previous, false) : undefined });
     } catch (reason) {
-      setEditor((current) => ({ ...current, saving: false }));
+      setSkinStatus({ kind: "error", message: String(reason) });
+    }
+  };
+
+  /** Bras d'un skin de la bibliothèque, choisis pendant son essai : gardés pour la prochaine fois. */
+  const setSkinModel = async (skin: SavedSkin, model: SkinModel) => {
+    setSkins((current) => ({ ...current, library: current.library.map((entry) => (entry.id === skin.id ? { ...entry, model } : entry)) }));
+    try {
+      await api.setSkinModel(skin.id, model);
+    } catch (reason) {
+      setSkins(await api.listSkins());
       setSkinStatus({ kind: "error", message: String(reason) });
     }
   };
@@ -1340,7 +1342,8 @@ export default function App() {
               onAddFile={addSkinFile}
               onRename={(skin, name) => void renameSkin(skin, name)}
               onRemove={(skin) => void removeSkin(skin)}
-              onEdit={() => setEditor({ open: true, draft: look, saving: false })}
+              onWornModel={(model) => void wearModel(model)}
+              onSkinModel={(skin, model) => void setSkinModel(skin, model)}
               capes={(profile.capes ?? []).map(toCape)}
               onRemoteSkin={(skin, wear) => void addRemoteSkin(skin, wear)}
               onWearCape={(cape) => void wearCape(cape)}
@@ -1371,7 +1374,7 @@ export default function App() {
               entries={gameLog.entries}
               running={gameLog.running}
               onClear={() => void clearConsole()}
-              onOpenLogs={() => void api.openLogsDir()}
+              onOpenLogs={() => api.openInstanceFolder(consoleInstance, "logs").catch((reason) => setNotice(String(reason)))}
               instances={instances.map((entry) => ({ id: entry.id, name: entry.name, running: running.includes(entry.id) }))}
               instance={consoleInstance}
               onInstance={setConsoleInstance}
@@ -1406,8 +1409,8 @@ export default function App() {
               onChangeGameDir={() => void changeGameDir()}
               moving={moving}
               onCleanStorage={async () => {
-                await api.cleanStorage();
-                setStorage(await api.storageUsage());
+                await api.cleanStorage(settings.logRetentionDays);
+                setStorage(await api.storageUsage(settings.logRetentionDays));
               }}
               steam={{
                 state: steam,
@@ -1421,22 +1424,6 @@ export default function App() {
           )}
         </div>
       </div>
-
-      {editor.draft && (
-        <SkinEditorDialog
-          open={editor.open}
-          draft={editor.draft}
-          capes={(profile?.capes ?? []).map(toCape)}
-          saving={editor.saving}
-          onChange={(draft) => setEditor((current) => ({ ...current, draft }))}
-          onReplaceTexture={async (file) => {
-            const texture = await readAsDataUrl(file);
-            setEditor((current) => (current.draft ? { ...current, draft: { ...current.draft, texture } } : current));
-          }}
-          onSave={saveEditor}
-          onOpenChange={(openEditor) => setEditor((current) => ({ ...current, open: openEditor }))}
-        />
-      )}
 
       {profile && (
         <NameDialog
@@ -1474,7 +1461,7 @@ export default function App() {
         logTail={crash?.log ?? ""}
         log={crash?.full ?? ""}
         onCopyLog={() => void navigator.clipboard.writeText(crash?.log ?? "")}
-        onOpenLogs={() => void api.openLogsDir()}
+        onOpenLogs={() => crash && api.openInstanceFolder(crash.instance, "logs").catch((reason) => setNotice(String(reason)))}
         onRelaunch={() => {
           if (!crash) return;
           setCrash(null);
