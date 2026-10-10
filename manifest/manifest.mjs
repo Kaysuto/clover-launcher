@@ -19,7 +19,7 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 /** Descriptions complètes en français, `descriptions/<slug>.md`, affichées sur la page du mod. */
 const DESCRIPTIONS = join(ROOT, "descriptions");
 const MODRINTH = "https://api.modrinth.com/v2";
-const USER_AGENT = "Kaysuto/clover-launcher (contact@kaysuto.fr)";
+const USER_AGENT = "theclovergames/clover-launcher (contact@kaysuto.fr)";
 const SCHEMA = 1;
 const RELEASE_ORDER = ["release", "beta", "alpha"];
 
