@@ -7,7 +7,7 @@ import { SkinViewer } from "@/components/SkinViewer";
 import { primaryButton, secondaryButton } from "@/lib/buttons";
 import { ownedCapeText } from "@/lib/capes";
 import { cn } from "@/lib/utils";
-import { CapeDialog } from "@/screens/Dialogs";
+import { CapeDialog, ModelDialog } from "@/screens/Dialogs";
 import { Discover, type Trial } from "@/screens/Discover";
 import type { Cape, SavedSkin, SkinLook, SkinModel } from "@/types";
 
@@ -25,7 +25,10 @@ type Props = {
   onRename: (skin: SavedSkin, name: string) => void;
   /** Retire un skin de la bibliothèque locale, sans toucher au skin porté. */
   onRemove: (skin: SavedSkin) => void;
-  onEdit: () => void;
+  /** Change les bras du skin porté sur le compte, une fois confirmé. */
+  onWornModel: (model: SkinModel) => void;
+  /** Bras d'un skin de la bibliothèque, choisis pendant son essai. */
+  onSkinModel: (skin: SavedSkin, model: SkinModel) => void;
   /** Capes possédées par le compte. */
   capes: Cape[];
   /** Skin de la Découverte ou du compte : ajouté à la bibliothèque, porté seulement si `wear`. */
@@ -46,6 +49,54 @@ const iconButton = cn(secondaryButton, "w-9 px-0");
 const FILTER_FROM = 9;
 /** Durée d'affichage d'une confirmation (« Skin porté », « Ajouté »…). */
 const DONE_MS = 8000;
+
+const MODELS: { value: SkinModel; label: string; hint: string }[] = [
+  { value: "classic", label: "Classiques", hint: "Bras de 4 pixels" },
+  { value: "slim", label: "Fins", hint: "Bras de 3 pixels" },
+];
+const BACK = [
+  { value: false, label: "Cape" },
+  { value: true, label: "Élytres" },
+];
+
+/** Choix exclusif compact de l'aperçu : dos du personnage, bras. */
+function Choice<T extends string | boolean>({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+  className,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string; hint?: string }[];
+  disabled?: boolean;
+  onChange: (value: T) => void;
+  className?: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className={cn("flex gap-0.5 rounded-lg border border-border bg-[#100e0b]/90 p-0.5", className)}>
+      {options.map((option) => (
+        <button
+          key={String(option.value)}
+          type="button"
+          role="radio"
+          aria-checked={value === option.value}
+          title={option.hint}
+          disabled={disabled}
+          onClick={() => value !== option.value && onChange(option.value)}
+          className={cn(
+            "rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:opacity-60",
+            value === option.value ? "bg-secondary text-foreground" : "text-muted-foreground enabled:hover:text-foreground",
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function TileAction({ label, danger, onClick, children }: { label: string; danger?: boolean; onClick: () => void; children: ReactNode }) {
   return (
@@ -248,7 +299,7 @@ const tabClass = (selected: boolean) =>
   cn("flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-[13px] font-semibold transition-colors", selected ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground");
 
 export function SkinsScreen(props: Props) {
-  const { playerName, look, saved, activeId, onSelect, onAddFile, onRename, onRemove, onEdit, capes, onRemoteSkin, onWearCape, onExport, status, onDismissStatus, animateSkin } =
+  const { playerName, look, saved, activeId, onSelect, onAddFile, onRename, onRemove, onWornModel, onSkinModel, capes, onRemoteSkin, onWearCape, onExport, status, onDismissStatus, animateSkin } =
     props;
   const [view, setView] = useState<"mine" | "discover">("mine");
   /** La Découverte reste montée une fois ouverte : recherche et défilement sont gardés. */
@@ -257,10 +308,12 @@ export function SkinsScreen(props: Props) {
   const [trial, setTrial] = useState<Trial | null>(null);
   /** Cape choisie, en attente de confirmation : l'aperçu la montre déjà. */
   const [capeRequest, setCapeRequest] = useState<{ cape: Cape | null } | null>(null);
+  /** Bras demandés pour le skin porté, en attente de confirmation : l'aperçu les montre déjà. */
+  const [modelRequest, setModelRequest] = useState<SkinModel | null>(null);
   const [filter, setFilter] = useState("");
   const [dropping, setDropping] = useState(false);
   const [elytra, setElytra] = useState(false);
-  const shown = capeRequest ? { ...look, cape: capeRequest.cape } : trial ? trialLook(look, trial) : look;
+  const shown = capeRequest ? { ...look, cape: capeRequest.cape } : modelRequest ? { ...look, model: modelRequest } : trial ? trialLook(look, trial) : look;
   const triedSkin = trial?.kind === "skin" ? trial : null;
   const busy = status?.kind === "busy";
   const show = (id: "mine" | "discover", inside?: "skins" | "capes") => {
@@ -292,9 +345,17 @@ export function SkinsScreen(props: Props) {
   const wearTried = () => {
     if (!triedSkin) return;
     const entry = triedSkin.savedId ? saved.find((skin) => skin.id === triedSkin.savedId) : undefined;
-    if (entry) onSelect(entry);
+    if (entry) onSelect({ ...entry, model: triedSkin.model });
     else onRemoteSkin(triedSkin, true);
     setTrial(null);
+  };
+
+  // Bras du skin essayé (gardés pour un skin de la bibliothèque), sinon du skin porté après confirmation.
+  const changeModel = (model: SkinModel) => {
+    if (!triedSkin) return setModelRequest(model);
+    setTrial({ ...triedSkin, model });
+    const entry = triedSkin.savedId ? saved.find((skin) => skin.id === triedSkin.savedId) : undefined;
+    if (entry) onSkinModel(entry, model);
   };
 
   const needle = filter.trim().toLocaleLowerCase("fr");
@@ -313,25 +374,7 @@ export function SkinsScreen(props: Props) {
         <div className="relative">
           <div aria-hidden className="absolute bottom-9 left-1/2 h-5 w-32 -translate-x-1/2 rounded-[50%] bg-black/60 blur-[7px]" />
           <SkinViewer look={shown} width={230} height={360} animate={animateSkin} elytra={elytra} />
-          {shown.cape && (
-            <div role="radiogroup" aria-label="Dos du personnage" className="absolute bottom-0 left-1/2 flex -translate-x-1/2 gap-0.5 rounded-lg border border-border bg-[#100e0b]/90 p-0.5">
-              {[
-                { value: false, label: "Cape" },
-                { value: true, label: "Élytres" },
-              ].map((option) => (
-                <button
-                  key={option.label}
-                  type="button"
-                  role="radio"
-                  aria-checked={elytra === option.value}
-                  onClick={() => setElytra(option.value)}
-                  className={cn("rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors", elytra === option.value ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          )}
+          {shown.cape && <Choice label="Dos du personnage" value={elytra} options={BACK} onChange={setElytra} className="absolute bottom-0 left-1/2 -translate-x-1/2" />}
         </div>
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <MoveHorizontal className="size-3.5" aria-hidden />
@@ -339,7 +382,13 @@ export function SkinsScreen(props: Props) {
         </p>
 
         {/* Hauteur réservée : l'aperçu ne saute pas entre ton skin et un essai. */}
-        <div className="flex min-h-[104px] w-full flex-col items-center justify-start gap-2.5">
+        <div className="flex min-h-[144px] w-full flex-col items-center justify-start gap-2.5">
+          {trial?.kind !== "cape" && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Bras</span>
+              <Choice label="Bras" value={triedSkin?.model ?? modelRequest ?? look.model} options={MODELS} disabled={!triedSkin && (busy || !look.texture)} onChange={changeModel} />
+            </div>
+          )}
           {triedSkin ? (
             <>
               <div className="flex gap-2">
@@ -372,37 +421,28 @@ export function SkinsScreen(props: Props) {
               <p className="max-w-[240px] text-center text-xs text-muted-foreground">Tu ne possèdes pas cette cape : Minecraft ne permet de porter que les siennes.</p>
             )
           ) : (
-            <>
-              <p className="text-center text-xs text-muted-foreground">
-                Bras {look.model === "slim" ? "fins" : "classiques"} · {look.cape ? `cape ${ownedCapeText(look.cape.name).name}` : "sans cape"}
-              </p>
-              <div className="flex gap-2">
-                <button type="button" onClick={onEdit} className={secondaryButton}>
-                  <Pencil className="size-4" aria-hidden />
-                  Modifier
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onRemoteSkin({ texture: look.texture, model: look.model, name: playerName }, false)}
-                  disabled={!look.texture}
-                  title="Garder ce skin dans Mes skins"
-                  aria-label="Garder ce skin dans Mes skins"
-                  className={iconButton}
-                >
-                  <BookmarkPlus className="size-4" aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onExport({ texture: look.texture, name: playerName })}
-                  disabled={!look.texture}
-                  title="Exporter mon skin en .png"
-                  aria-label="Exporter mon skin en .png"
-                  className={iconButton}
-                >
-                  <Download className="size-4" aria-hidden />
-                </button>
-              </div>
-            </>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => onRemoteSkin({ texture: look.texture, model: look.model, name: playerName }, false)}
+                disabled={!look.texture}
+                title="Garder ce skin dans Mes skins"
+                aria-label="Garder ce skin dans Mes skins"
+                className={iconButton}
+              >
+                <BookmarkPlus className="size-4" aria-hidden />
+              </button>
+              <button
+                type="button"
+                onClick={() => onExport({ texture: look.texture, name: playerName })}
+                disabled={!look.texture}
+                title="Exporter mon skin en .png"
+                aria-label="Exporter mon skin en .png"
+                className={iconButton}
+              >
+                <Download className="size-4" aria-hidden />
+              </button>
+            </div>
           )}
           {trial && (
             <button type="button" onClick={() => setTrial(null)} className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground">
@@ -549,6 +589,15 @@ export function SkinsScreen(props: Props) {
           </div>
         </div>
       </div>
+
+      <ModelDialog
+        request={modelRequest}
+        onCancel={() => setModelRequest(null)}
+        onConfirm={(model) => {
+          setModelRequest(null);
+          onWornModel(model);
+        }}
+      />
 
       <CapeDialog
         request={capeRequest}

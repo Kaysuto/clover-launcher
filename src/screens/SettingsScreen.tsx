@@ -48,6 +48,9 @@ export type Settings = {
   // Intégrations
   discordPresence: boolean;
   crashReports: boolean;
+  // Stockage
+  /** Journaux de toutes les instances supprimés au démarrage passé ce nombre de jours ; 0 : jamais. */
+  logRetentionDays: number;
   /** Mods du catalogue choisis ; `null` = mods activés par défaut. */
   enabledMods?: string[] | null;
 };
@@ -550,7 +553,15 @@ function Game({ settings, onChange, system, onResetRecommended, hidden = [] }: P
   );
 }
 
-function Storage({ storage, onOpenGameDir, onImport, onChangeGameDir, onCleanStorage, moving = null, hidden = [] }: Props) {
+const RETENTION = [
+  { value: 7, label: "7 jours" },
+  { value: 14, label: "14 jours" },
+  { value: 30, label: "30 jours" },
+  { value: 90, label: "90 jours" },
+  { value: 0, label: "Toujours" },
+];
+
+function Storage({ settings, onChange, storage, onOpenGameDir, onImport, onChangeGameDir, onCleanStorage, moving = null, hidden = [] }: Props) {
   const total = storage.parts.reduce((sum, part) => sum + part.bytes, 0);
   return (
     <>
@@ -572,7 +583,11 @@ function Storage({ storage, onOpenGameDir, onImport, onChangeGameDir, onCleanSto
         </ul>
       </Row>
 
-      <Row title="Libérer de l'espace" hint="Journaux anciens, versions de Minecraft et de Java qui ne servent plus. Tes mondes et tes captures ne sont jamais touchés.">
+      <Row title="Garder les journaux" hint="Journaux et rapports de plantage de toutes les instances. Passé ce délai, ils sont supprimés au démarrage du launcher. Chaque instance peut aussi vider les siens dans ses paramètres.">
+        <Segmented label="Durée de conservation des journaux" value={settings.logRetentionDays} options={RETENTION} onChange={(logRetentionDays) => onChange({ logRetentionDays })} />
+      </Row>
+
+      <Row title="Libérer de l'espace" hint="Journaux plus anciens que le délai choisi, versions de Minecraft et de Java qui ne servent plus. Tes mondes et tes captures ne sont jamais touchés.">
         <button type="button" onClick={onCleanStorage} disabled={storage.reclaimable === 0} className={`${secondaryButton} self-start`}>
           <Trash2 className="size-4" aria-hidden />
           {storage.reclaimable > 0 ? `Nettoyer (${formatBytes(storage.reclaimable)})` : "Rien à nettoyer"}

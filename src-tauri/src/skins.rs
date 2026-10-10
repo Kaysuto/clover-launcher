@@ -88,6 +88,16 @@ pub fn rename(root: &Path, id: &str, name: &str) -> Result<String> {
     Ok(name)
 }
 
+/// Bras (`classic` ou `slim`) avec lesquels un skin de la bibliothèque sera porté.
+pub fn set_model(root: &Path, id: &str, model: &str) -> Result<()> {
+    let mut index = read_index(root);
+    if let Some(entry) = index.iter_mut().find(|entry| entry.id == id) {
+        entry.model = model.into();
+        write_index(root, &index)?;
+    }
+    Ok(())
+}
+
 pub fn remove(root: &Path, id: &str) -> Result<()> {
     let mut index = read_index(root);
     let before = index.len();
@@ -263,6 +273,8 @@ mod tests {
         assert_eq!(library(&root)[0].name, "Skin");
         rename(&root, "inconnu", "Autre").unwrap();
         assert_eq!(library(&root).len(), 1);
+        set_model(&root, &first.id, "classic").unwrap();
+        assert_eq!(library(&root)[0].model, "classic");
         remove(&root, &first.id).unwrap();
         assert!(library(&root).is_empty());
         let outside = root.join("dehors.png");

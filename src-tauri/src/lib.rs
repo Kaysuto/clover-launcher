@@ -374,18 +374,19 @@ async fn kept_versions(app: &AppHandle, state: &AppState) -> Option<std::collect
     Some(keep)
 }
 
+/// `retention_days` : réglage affiché, pas encore forcément enregistré (`logRetentionDays`).
 #[tauri::command]
-async fn storage_usage(app: AppHandle, state: State<'_, AppState>) -> Result<storage::Usage, String> {
+async fn storage_usage(retention_days: u32, app: AppHandle, state: State<'_, AppState>) -> Result<storage::Usage, String> {
     let keep = kept_versions(&app, &state).await;
-    let root = state.root.clone();
-    tauri::async_runtime::spawn_blocking(move || storage::usage(&root, keep.as_ref())).await.map_err(|e| e.to_string())
+    let (root, retention) = (state.root.clone(), storage::retention(retention_days));
+    tauri::async_runtime::spawn_blocking(move || storage::usage(&root, keep.as_ref(), retention)).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn clean_storage(app: AppHandle, state: State<'_, AppState>) -> Result<u64, String> {
+async fn clean_storage(retention_days: u32, app: AppHandle, state: State<'_, AppState>) -> Result<u64, String> {
     let keep = kept_versions(&app, &state).await;
-    let root = state.root.clone();
-    tauri::async_runtime::spawn_blocking(move || storage::clean(&root, keep.as_ref())).await.map_err(|e| e.to_string())
+    let (root, retention) = (state.root.clone(), storage::retention(retention_days));
+    tauri::async_runtime::spawn_blocking(move || storage::clean(&root, keep.as_ref(), retention)).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -451,15 +452,6 @@ async fn install_update(app: AppHandle, pending: State<'_, update::PendingUpdate
         return Err("Ferme Minecraft avant de mettre à jour le launcher.".into());
     }
     update::install(&app, &pending).await.inspect_err(|e| eprintln!("[update] {e}"))
-}
-
-#[tauri::command]
-fn open_logs_dir(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let stored = state.snapshot();
-    let last = instances::resolve(&stored, stored.last_launched_instance.as_deref().or(Some(instances::BUILTIN))).unwrap_or_else(|_| instances::Instance::builtin());
-    let logs = instances::paths(game::Paths::new(&app).map_err(|e| e.to_string())?, &last).map_err(|e| e.to_string())?.logs;
-    std::fs::create_dir_all(&logs).map_err(|e| e.to_string())?;
-    app.opener().open_path(logs.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
 }
 
 #[derive(Serialize)]
@@ -559,6 +551,11 @@ async fn player_look(name: String) -> Result<Option<discover::PlayerLook>, Strin
 #[tauri::command]
 fn rename_skin(id: String, name: String, state: State<'_, AppState>) -> Result<String, skins::SkinError> {
     skins::rename(&state.root, &id, &name)
+}
+
+#[tauri::command]
+fn set_skin_model(id: String, model: String, state: State<'_, AppState>) -> Result<(), skins::SkinError> {
+    skins::set_model(&state.root, &id, &model)
 }
 
 #[tauri::command]
@@ -975,6 +972,10 @@ pub fn run() {
                 }
             }
             let discord = stored.settings.discord_presence;
+            if let Some(retention) = storage::retention(stored.settings.log_retention_days) {
+                let root = root.clone();
+                tauri::async_runtime::spawn_blocking(move || storage::purge_logs(&root, retention));
+            }
             crash::set(stored.settings.crash_reports, stored.settings.beta_channel);
             app.manage(AppState { stored: SyncMutex::new(stored), path, root: root.clone() });
             // Parties laissées par un launcher fermé entre-temps : la console d'un jeu toujours
@@ -1129,10 +1130,10 @@ pub fn run() {
             clear_game_console,
             running_games,
             stop_game,
-            open_logs_dir,
             list_skins,
             add_skin,
             rename_skin,
+            set_skin_model,
             remove_skin,
             add_remote_skin,
             export_skin,
@@ -1170,6 +1171,7 @@ pub fn run() {
             shortcut::create_desktop_shortcut,
             shortcut::take_launch_request,
             instances::read_game_log,
+            instances::clear_instance_logs,
             instances::export_modpack,
             instances::set_content_enabled,
             instances::trash_content,

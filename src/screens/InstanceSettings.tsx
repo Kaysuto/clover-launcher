@@ -1,14 +1,15 @@
-import { Check, Lock, RotateCcw, SlidersHorizontal } from "lucide-react";
-import { useState } from "react";
+import { Check, FolderOpen, Lock, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { primaryButton, secondaryButton } from "@/lib/buttons";
 import { instanceSummary } from "@/lib/instances";
 import { cn } from "@/lib/utils";
-import type { InstanceEntry } from "@/types";
+import { formatBytes } from "@/screens/SettingsScreen";
+import type { GameLogFile, InstanceEntry } from "@/types";
 
-type Services = Pick<typeof api, "updateInstance" | "resetRecommended">;
+type Services = Pick<typeof api, "updateInstance" | "resetRecommended" | "gameLogs" | "openInstanceFolder" | "clearInstanceLogs">;
 
 /** Mémoire proposée, en Go ; « Réglage du launcher » suit les paramètres du launcher. */
 const MEMORY = [2, 3, 4, 6, 8, 12, 16];
@@ -29,7 +30,8 @@ function Row({ title, hint, children }: { title: string; hint?: string; children
 
 /**
  * Réglages propres à une instance, distincts de ceux du launcher : nom (l'instance du serveur
- * s'appelle toujours « Clover Games »), mémoire et arguments Java en plus de ceux du launcher.
+ * s'appelle toujours « Clover Games »), mémoire et arguments Java en plus de ceux du launcher,
+ * journaux. Leur durée de conservation, elle, est commune (paramètres du launcher, Stockage).
  */
 export function InstanceSettings({
   entry,
@@ -59,6 +61,23 @@ export function InstanceSettings({
   const [error, setError] = useState<string | null>(null);
   const changed = (!clover && name.trim() !== entry.name) || memory !== (entry.memoryMb ? String(entry.memoryMb / 1024) : LAUNCHER) || javaArgs.trim() !== (entry.javaArgs ?? "");
   const memoryChoices = [...new Set([...MEMORY, ...(entry.memoryMb ? [entry.memoryMb / 1024] : [])])].sort((a, b) => a - b);
+  // Journaux de Minecraft et rapports de plantage, relus après une suppression ou la fin d'une partie.
+  const [logs, setLogs] = useState<GameLogFile[] | null>(null);
+  const [logsRevision, setLogsRevision] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    services.gameLogs(entry.id).then((files) => alive && setLogs(files)).catch(() => alive && setLogs([]));
+    return () => {
+      alive = false;
+    };
+  }, [entry.id, services, locked, logsRevision]);
+  const logsBytes = (logs ?? []).reduce((sum, file) => sum + file.size, 0);
+  const clearLogs = () =>
+    services
+      .clearInstanceLogs(entry.id)
+      .then((freed) => onNotice(`Journaux supprimés : ${formatBytes(freed)} libérés.`))
+      .catch((reason) => onNotice(String(reason)))
+      .finally(() => setLogsRevision((revision) => revision + 1));
 
   const save = async () => {
     setState("saving");
@@ -127,6 +146,29 @@ export function InstanceSettings({
           spellCheck={false}
           className="h-9 w-full max-w-md rounded-md border border-border bg-[#100e0b] px-3 font-mono text-xs text-foreground outline-none select-text placeholder:text-muted-foreground/60 focus:border-accent"
         />
+      </Row>
+
+      <Row
+        title="Journaux"
+        hint={
+          clover || entry.separate
+            ? "Journaux de Minecraft et rapports de plantage de cette instance."
+            : "Dossier de jeu partagé avec Clover Games : ces journaux sont aussi les siens."
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          {logs === null ? "…" : logs.length === 0 ? "Aucun journal." : `${logs.length} ${logs.length > 1 ? "fichiers" : "fichier"} · ${formatBytes(logsBytes)}`}
+        </p>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => services.openInstanceFolder(entry.id, "logs").catch((reason) => onNotice(String(reason)))} className={secondaryButton}>
+            <FolderOpen className="size-4" aria-hidden />
+            Ouvrir le dossier
+          </button>
+          <button type="button" onClick={() => void clearLogs()} disabled={locked || !logs?.length} className={secondaryButton}>
+            <Trash2 className="size-4" aria-hidden />
+            Supprimer les journaux
+          </button>
+        </div>
       </Row>
 
       {clover && (

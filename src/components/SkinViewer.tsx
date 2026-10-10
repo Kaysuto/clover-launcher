@@ -48,8 +48,9 @@ function recoil(t: number) {
 }
 
 /**
- * Aperçu 3D du skin. On le fait seulement tourner sur lui-même, à la souris : ni inclinaison, ni
- * zoom, ni déplacement ; on peut aussi l'attraper pour le soulever. Il change d'humeur quand on ne touche plus
+ * Aperçu 3D du skin. On le fait seulement tourner sur lui-même en glissant de côté, sur lui comme à
+ * côté : ni inclinaison, ni zoom, ni déplacement ; glisser vers le haut ou le bas l'attrape pour le
+ * soulever. Il change d'humeur quand on ne touche plus
  * au launcher et suit le curseur des yeux par moments (`SkinMoods`), et un clic sur le personnage le frappe comme en jeu. Immobile si le système
  * demande moins d'animations : le coup n'est alors qu'une teinte rouge, sans recul.
  */
@@ -236,13 +237,14 @@ function attachHit(viewer: Viewer, canvas: HTMLCanvasElement, knockback: boolean
 }
 
 /**
- * Prise en main : appuyer sur le personnage puis glisser l'attrape. L'aperçu sort alors de sa place
+ * Prise en main : appuyer sur le personnage puis glisser vers le haut ou le bas l'attrape ; de côté,
+ * il tourne, comme à côté de lui. L'aperçu sort alors de sa place
  * (déplacé dans `body`, au-dessus de tout le launcher, sans capter la souris) et suit la main dans
  * toute la fenêtre ; le personnage se balance selon la vitesse du geste et se débat (`moods`).
  * Lâché, il garde son élan (on peut le lancer) et retombe jusqu'à la hauteur de sa place, se tasse
  * s'il tombe vraiment, puis rentre à pied, tourné vers sa place ; lâché plus bas, il y remonte d'un
  * saut. Avec des élytres, il plane au lieu de tomber et remonte en volant au lieu de sauter. Arrivé,
- * il se retourne face à l'écran. Glisser à côté de lui le fait toujours tourner. Rend le nettoyage.
+ * il se retourne face à l'écran. Rend le nettoyage.
  */
 function attachGrab(viewer: Viewer, canvas: HTMLCanvasElement, moods: MoodAnimation, state: Busy) {
   const player = viewer.playerObject;
@@ -260,7 +262,8 @@ function attachGrab(viewer: Viewer, canvas: HTMLCanvasElement, moods: MoodAnimat
   const facing = new Quaternion();
   const heading = new Quaternion();
   const tilt = new Quaternion();
-  let pressed: { id: number; x: number; y: number; hit: Intersection } | null = null;
+  /** `turning` : le glisser est parti de côté, il fait tourner l'aperçu jusqu'au relâchement. */
+  let pressed: { id: number; x: number; y: number; hit: Intersection; turning: boolean } | null = null;
   /** Place de l'aperçu pendant qu'il en est sorti. */
   let home: { slot: HTMLElement; width: number; height: number } | null = null;
   /** Point saisi à l'écran : il reste dans la fenêtre. */
@@ -292,6 +295,13 @@ function attachGrab(viewer: Viewer, canvas: HTMLCanvasElement, moods: MoodAnimat
 
   /** Élytres portées (bascule de la page Skins) : lu à chaque image, la bascule peut arriver en vol. */
   const winged = () => player.backEquipment === "elytra";
+
+  /** Même vitesse que les contrôles de skinview3d (OrbitControls) : un tour pour un glisser de la hauteur de l'aperçu. */
+  const rotateView = (dx: number) => {
+    const { camera, controls } = viewer;
+    camera.position.sub(controls.target).applyAxisAngle(UP, (-2 * Math.PI * dx * controls.rotateSpeed) / canvas.clientHeight).add(controls.target);
+    controls.update();
+  };
 
   const bodyAt = (event: PointerEvent) => {
     const rect = canvas.getBoundingClientRect();
@@ -466,9 +476,24 @@ function attachGrab(viewer: Viewer, canvas: HTMLCanvasElement, moods: MoodAnimat
   // Suivi sur la fenêtre : l'aperçu détaché ne capte plus la souris.
   const onMove = (event: PointerEvent) => {
     if (!pressed || event.pointerId !== pressed.id) return;
+    if (pressed.turning) {
+      rotateView(event.clientX - pressed.x);
+      pressed.x = event.clientX;
+      return;
+    }
     if (phase !== "held" || !home) {
-      if (Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) > 4) begin(pressed.hit);
-      else return;
+      const dx = event.clientX - pressed.x;
+      const dy = event.clientY - pressed.y;
+      if (Math.hypot(dx, dy) <= 4) return;
+      // Le personnage occupe presque tout l'aperçu : de côté, le glisser le fait tourner.
+      if (Math.abs(dx) > Math.abs(dy)) {
+        pressed.turning = true;
+        document.documentElement.style.cursor = "ew-resize";
+        rotateView(dx);
+        pressed.x = event.clientX;
+        return;
+      }
+      begin(pressed.hit);
     }
     goalX = MathUtils.clamp(event.clientX, 0, window.innerWidth) - originX;
     goalY = MathUtils.clamp(event.clientY, 0, window.innerHeight) - originY;
@@ -510,12 +535,12 @@ function attachGrab(viewer: Viewer, canvas: HTMLCanvasElement, moods: MoodAnimat
     } else touchDown(now, false);
   };
 
-  // Phase de capture : passe avant les contrôles de rotation, désactivés le temps de la prise.
+  // Phase de capture : passe avant les contrôles de rotation, désactivés jusqu'au relâchement.
   const onPointerDown = (event: PointerEvent) => {
     if (state.busy || event.button !== 0) return;
     const hit = bodyAt(event);
     if (!hit) return;
-    pressed = { id: event.pointerId, x: event.clientX, y: event.clientY, hit };
+    pressed = { id: event.pointerId, x: event.clientX, y: event.clientY, hit, turning: false };
     originX = event.clientX;
     originY = event.clientY;
     viewer.controls.enabled = false;
@@ -523,12 +548,7 @@ function attachGrab(viewer: Viewer, canvas: HTMLCanvasElement, moods: MoodAnimat
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
   };
-  const onHover = (event: PointerEvent) => {
-    if (!pressed && event.buttons === 0) canvas.style.cursor = !state.busy && bodyAt(event) ? "grab" : "";
-  };
-
   canvas.addEventListener("pointerdown", onPointerDown, { capture: true });
-  canvas.addEventListener("pointermove", onHover);
   return () => {
     cancelAnimationFrame(frame);
     stopFollowing();
@@ -538,6 +558,5 @@ function attachGrab(viewer: Viewer, canvas: HTMLCanvasElement, moods: MoodAnimat
       reattach();
     }
     canvas.removeEventListener("pointerdown", onPointerDown, { capture: true });
-    canvas.removeEventListener("pointermove", onHover);
   };
 }
